@@ -18,14 +18,36 @@ body,
   width: 100vw;
 }
 
+/* ---------- Top bar ---------- */
+
 .top-bar {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  align-items: center;
+  gap: 1rem;
   padding: 0.6rem 1rem;
   background: #11141a;
   border-bottom: 1px solid #1f242c;
   z-index: 10;
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.top-bar-center {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: center;
+  min-width: 0;
+}
+
+.top-bar-right {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .brand {
@@ -38,8 +60,242 @@ body,
   color: #8a929c;
 }
 
+.location-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6c7682;
+}
+
+.location-name {
+  font-size: 0.9rem;
+  color: #d6dae0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60ch;
+}
+
+.location-dim {
+  font-size: 0.75rem;
+  color: #6c7682;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  margin-left: 0.5rem;
+}
+
+.entry-instruction-bar {
+  font-size: 0.85rem;
+  color: #aab1b9;
+}
+
+.entry-instruction-bar kbd {
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
+  background: #1c2128;
+  border: 1px solid #2a313b;
+  border-radius: 3px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  color: #e8eaed;
+  margin: 0 0.15rem;
+}
+
+.change-location {
+  background: transparent;
+  color: #d6dae0;
+  border: 1px solid #2a313b;
+  padding: 0.4rem 0.85rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.change-location:hover {
+  background: #1a1f27;
+  border-color: #3a4250;
+}
+
+.primary-button {
+  background: #2c6cb8;
+  color: #fff;
+  border: none;
+  padding: 0.45rem 1rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.primary-button:hover {
+  background: #3a7ec9;
+}
+
+.app-shell.draw-mode .scene-container {
+  cursor: crosshair;
+}
+
+/* ---------- Initializing overlay ---------- */
+
+.initializing-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 11, 16, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 20;
+  pointer-events: all;
+}
+
+.initializing-card {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.25rem 1.75rem;
+  background: rgba(17, 20, 26, 0.92);
+  border: 1px solid #2a3340;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  min-width: 360px;
+}
+
+.initializing-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(74, 144, 226, 0.25);
+  border-top-color: #4a90e2;
+  border-radius: 50%;
+  animation: initSpin 0.85s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes initSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.initializing-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.initializing-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e8eaed;
+  letter-spacing: 0.02em;
+}
+
+.initializing-subtitle {
+  font-size: 0.8rem;
+  color: #8a929c;
+}
+
 .scene-container {
   flex: 1 1 auto;
   position: relative;
   min-height: 0;
+}
+
+/* Subtle vignette over the scene to soften the void around the clipped AOI. */
+.scene-container::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0) 50%,
+    rgba(0, 0, 0, 0.45) 100%
+  );
+  z-index: 1;
+}
+
+/* ---------- Confirm-area floating panel (entry mode) ---------- */
+
+.confirm-panel {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1.25rem;
+  background: rgba(17, 20, 26, 0.92);
+  border: 1px solid #2a3340;
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+  min-width: 360px;
+}
+
+.confirm-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.confirm-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.confirm-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6c7682;
+  width: 56px;
+}
+
+.confirm-value {
+  font-size: 0.85rem;
+  color: #e8eaed;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.confirm-secondary,
+.confirm-primary {
+  border: none;
+  padding: 0.55rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.confirm-secondary {
+  background: transparent;
+  color: #d6dae0;
+  border: 1px solid #2a313b;
+}
+
+.confirm-secondary:hover {
+  background: #1a1f27;
+}
+
+.confirm-primary {
+  background: #2c6cb8;
+  color: #fff;
+}
+
+.confirm-primary:hover {
+  background: #3a7ec9;
 }
