@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 import './cesium-config'
 import { SceneViewer } from './components/SceneViewer'
+import { AssetPalette } from './components/AssetPalette'
+import { AssetDetailPanel } from './components/AssetDetailPanel'
 import { reverseGeocode } from './api'
-import type { AreaOfOperation, Bbox } from './types'
+import { useStore } from './store'
+import type { Bbox } from './types'
 import './App.css'
 
 function bboxCenter(bbox: Bbox): { lat: number; lon: number } {
@@ -24,38 +27,47 @@ function fmtCoord(lat: number, lon: number): string {
 }
 
 function App() {
-  const [aoi, setAoi] = useState<AreaOfOperation | null>(null)
-  const [drawMode, setDrawMode] = useState(false)
-  const [aoiInitializing, setAoiInitializing] = useState(false)
+  const aoi = useStore((s) => s.aoi)
+  const drawMode = useStore((s) => s.drawMode)
+  const aoiInitializing = useStore((s) => s.aoiInitializing)
+  const setAoi = useStore((s) => s.setAoi)
+  const patchAoi = useStore((s) => s.patchAoi)
+  const setDrawMode = useStore((s) => s.setDrawMode)
+  const setAoiInitializing = useStore((s) => s.setAoiInitializing)
+  const clearAssets = useStore((s) => s.clearAssets)
 
-  const handleBboxDrawn = useCallback((bbox: Bbox) => {
-    console.log('[App] bbox drawn → committing AOI', bbox)
-    setAoi({ bbox, displayName: null })
-    setDrawMode(false)
-    setAoiInitializing(true)
-  }, [])
+  const handleBboxDrawn = useCallback(
+    (bbox: Bbox) => {
+      console.log('[App] bbox drawn → committing AOI', bbox)
+      setAoi({ bbox, displayName: null })
+      setDrawMode(false)
+      setAoiInitializing(true)
+    },
+    [setAoi, setDrawMode, setAoiInitializing],
+  )
 
-  const handleCancelDraw = useCallback(() => {
-    setDrawMode(false)
-  }, [])
+  const handleCancelDraw = useCallback(() => setDrawMode(false), [setDrawMode])
 
-  const handleAoiBuildingsReady = useCallback(() => {
-    setAoiInitializing(false)
-  }, [])
+  const handleAoiBuildingsReady = useCallback(
+    () => setAoiInitializing(false),
+    [setAoiInitializing],
+  )
 
   const startDrawing = () => {
     setAoi(null)
+    clearAssets()
     setAoiInitializing(false)
     setDrawMode(true)
   }
 
   const resetAoi = () => {
     setAoi(null)
+    clearAssets()
     setDrawMode(false)
     setAoiInitializing(false)
   }
 
-  // Reverse-geocode the AOI center for a friendly area name.
+  // Reverse-geocode AOI center.
   useEffect(() => {
     if (!aoi || aoi.displayName !== null) return
     const controller = new AbortController()
@@ -63,15 +75,11 @@ function App() {
     reverseGeocode(lat, lon, controller.signal)
       .then((r) => {
         if (controller.signal.aborted) return
-        setAoi((prev) =>
-          prev && prev.bbox === aoi.bbox ? { ...prev, displayName: r?.display_name ?? '' } : prev,
-        )
+        patchAoi({ displayName: r?.display_name ?? '' })
       })
-      .catch(() => {
-        /* leave displayName as null and let UI fall back to coords */
-      })
+      .catch(() => {})
     return () => controller.abort()
-  }, [aoi])
+  }, [aoi, patchAoi])
 
   const dim = aoi ? bboxDimensionsKm(aoi.bbox) : null
   const center = aoi ? bboxCenter(aoi.bbox) : null
@@ -124,17 +132,20 @@ function App() {
         </div>
       </header>
 
-      <main className="scene-container">
-        <SceneViewer
-          aoi={aoi}
-          drawMode={drawMode}
-          onBboxDrawn={handleBboxDrawn}
-          onCancelDraw={handleCancelDraw}
-          onAoiBuildingsReady={handleAoiBuildingsReady}
-        />
-
-        {aoiInitializing && <InitializingOverlay />}
-      </main>
+      <div className="workspace">
+        <AssetPalette />
+        <main className="scene-container">
+          <SceneViewer
+            aoi={aoi}
+            drawMode={drawMode}
+            onBboxDrawn={handleBboxDrawn}
+            onCancelDraw={handleCancelDraw}
+            onAoiBuildingsReady={handleAoiBuildingsReady}
+          />
+          {aoiInitializing && <InitializingOverlay />}
+        </main>
+        <AssetDetailPanel />
+      </div>
     </div>
   )
 }

@@ -16,6 +16,9 @@ import {
 } from 'cesium'
 import type { AreaOfOperation, Bbox } from '../types'
 import { BboxPicker } from './BboxPicker'
+import { AssetLayer } from './AssetLayer'
+import { AssetInteraction } from './AssetInteraction'
+import { DeploymentImporter } from './DeploymentImporter'
 
 type Props = {
   aoi: AreaOfOperation | null
@@ -163,8 +166,18 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
 
     v.scene.requestRenderMode = true
     v.scene.maximumRenderTimeChange = Infinity
-    v.resolutionScale = 0.85
+    v.resolutionScale = 1.0
+    // Render at the actual device pixel ratio (e.g., 2× on retina) instead of
+    // scaled CSS pixels — biggest single perceived-sharpness win on Mac displays.
+    v.useBrowserRecommendedResolution = false
+    // Loose SSE pre-AOI → snappy startup; tightened to 1 once AOI is committed.
     v.scene.globe.maximumScreenSpaceError = 6
+    // Big tile cache so detail tiles aren't evicted as the camera moves around the AOI.
+    v.scene.globe.tileCacheSize = 1000
+    // FXAA blurs textures; swap to MSAA (hardware multisample) for crisp geometry
+    // edges without softening the imagery.
+    if (v.scene.postProcessStages.fxaa) v.scene.postProcessStages.fxaa.enabled = false
+    v.scene.msaaSamples = 4
 
     v.scene.setTerrain(Terrain.fromWorldTerrain())
     v.scene.globe.depthTestAgainstTerrain = true
@@ -207,6 +220,8 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
     if (!aoi) {
       clearAoiBorder(viewer)
       viewer.scene.globe.clippingPolygons = new ClippingPolygonCollection()
+      // Relax terrain detail back to startup level when AOI is cleared.
+      viewer.scene.globe.maximumScreenSpaceError = 6
       const t = tilesetRef.current
       if (t) {
         t.show = false
@@ -218,6 +233,9 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
 
     // Cut the globe to just the AOI — outside becomes empty atmosphere/void.
     viewer.scene.globe.clippingPolygons = bboxClippingPolygons(aoi.bbox)
+    // Force max terrain detail inside the AOI; the 1000-tile cache will keep
+    // the loaded detail in memory as the camera pans around within the AOI.
+    viewer.scene.globe.maximumScreenSpaceError = 1
     setAoiBorder(viewer, aoi.bbox)
 
     const t = tilesetRef.current
@@ -266,7 +284,14 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
     }
   }, [viewer, aoi, onAoiBuildingsReady])
 
-  return <BboxPicker enabled={drawMode} onDrawn={onBboxDrawn} onCancel={onCancelDraw} />
+  return (
+    <>
+      <BboxPicker enabled={drawMode} onDrawn={onBboxDrawn} onCancel={onCancelDraw} />
+      <AssetLayer />
+      <AssetInteraction />
+      <DeploymentImporter />
+    </>
+  )
 }
 
 export function SceneViewer(props: Props) {
@@ -281,6 +306,8 @@ export function SceneViewer(props: Props) {
       sceneModePicker={false}
       navigationHelpButton={false}
       fullscreenButton={false}
+      infoBox={false}
+      selectionIndicator={false}
     >
       <SceneSetup {...props} />
     </Viewer>

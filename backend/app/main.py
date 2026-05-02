@@ -4,6 +4,7 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import geocoding
+from app.deployment import Bbox, DeploymentReport, get_deployment_source
 
 app = FastAPI(title="SpectralEye Backend", version="0.1.0")
 
@@ -28,3 +29,13 @@ async def reverse_geocode(
 ) -> dict[str, Any] | None:
     """Reverse-geocode a point to a friendly place name (used to label the AOI center)."""
     return await geocoding.reverse(lat, lon)
+
+
+@app.post("/deployment/current")
+async def deployment_current(bbox: Bbox) -> DeploymentReport:
+    """Returns the C2's current view of deployed EW assets within the bbox.
+
+    Backed by SimulatedDeploymentSource for v0.1; swap the implementation when
+    real hardware aggregation is available."""
+    source = get_deployment_source()
+    return await source.fetch_current_deployment(bbox)
