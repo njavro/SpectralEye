@@ -1,0 +1,45 @@
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  background: #0b0d10;
+  color: #e8eaed;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+.top-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: #11141a;
+  border-bottom: 1px solid #1f242c;
+  z-index: 10;
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.subtitle {
+  font-size: 0.8rem;
+  color: #8a929c;
+}
+
+.scene-container {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+}
