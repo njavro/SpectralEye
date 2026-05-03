@@ -59,14 +59,16 @@ class DeploymentSource(Protocol):
 
 
 class SimulatedDeploymentSource:
-    """Fabricates a realistic small EW posture (5-7 assets) inside the AOI.
+    """Fabricates a minimal triad EW posture inside the AOI: exactly one of
+    each asset type, randomly placed.
 
-    Composition is intentional and reflects how a defended location would
-    typically be wired up:
-      - 1 perimeter jammer on a high vantage (rooftop / mast)
-      - 2 area sensors spread across the AOI for situational awareness
-      - 1 comms relay on a tall mast for backhaul
-      - Plus 1-2 bonus assets for variety (extra sensor or jammer)
+      - 1 perimeter jammer near the AOI centre
+      - 1 RF sensor placed anywhere in the AOI
+      - 1 comms relay placed anywhere in the AOI
+
+    Earlier revisions returned 5-7 assets with bonus randomness; this was
+    reduced to a fixed one-of-each set so demos start from a predictable,
+    legible deployment regardless of the AOI seed.
     """
 
     # Devices are mounted ON whatever surface they're at (rooftop or ground), not
@@ -75,10 +77,8 @@ class SimulatedDeploymentSource:
 
     async def fetch_current_deployment(self, bbox: Bbox) -> DeploymentReport:
         rng = random.Random()
-        reports: list[AssetReport] = []
-
-        # Perimeter jammer near AOI center.
-        reports.append(
+        reports: list[AssetReport] = [
+            # Perimeter jammer near AOI center (jitter < 1 pulls toward middle).
             self._make_asset(
                 "jammer",
                 bbox,
@@ -87,24 +87,17 @@ class SimulatedDeploymentSource:
                 freq=2400,
                 label="JAM-01",
                 jitter=0.2,
-            )
-        )
-
-        # Two area sensors spread across the AOI.
-        for i in range(2):
-            reports.append(
-                self._make_asset(
-                    "sensor",
-                    bbox,
-                    rng,
-                    erp_range=(0, 0),
-                    freq=rng.choice([2400, 5800]),
-                    label=f"SEN-{i + 1:02d}",
-                )
-            )
-
-        # Comms relay.
-        reports.append(
+            ),
+            # RF sensor anywhere in the AOI.
+            self._make_asset(
+                "sensor",
+                bbox,
+                rng,
+                erp_range=(0, 0),
+                freq=rng.choice([2400, 5800]),
+                label="SEN-01",
+            ),
+            # Comms relay anywhere in the AOI.
             self._make_asset(
                 "relay",
                 bbox,
@@ -112,40 +105,8 @@ class SimulatedDeploymentSource:
                 erp_range=(25, 35),
                 freq=5800,
                 label="RLY-01",
-            )
-        )
-
-        # 1-2 bonus assets for variety.
-        bonus_count = rng.randint(1, 2)
-        bonus_jammer_idx = 2
-        for _ in range(bonus_count):
-            t: AssetTypeLiteral = rng.choice(["jammer", "sensor"])
-            if t == "jammer":
-                label = f"JAM-{bonus_jammer_idx:02d}"
-                bonus_jammer_idx += 1
-                reports.append(
-                    self._make_asset(
-                        "jammer",
-                        bbox,
-                        rng,
-                        erp_range=(45, 55),
-                        freq=rng.choice([2400, 5800]),
-                        label=label,
-                    )
-                )
-            else:
-                idx = sum(1 for r in reports if r.type == "sensor") + 1
-                reports.append(
-                    self._make_asset(
-                        "sensor",
-                        bbox,
-                        rng,
-                        erp_range=(0, 0),
-                        freq=rng.choice([2400, 5800]),
-                        label=f"SEN-{idx:02d}",
-                    )
-                )
-
+            ),
+        ]
         return DeploymentReport(reports=reports, source="simulated")
 
     def _make_asset(
