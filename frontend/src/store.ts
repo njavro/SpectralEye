@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AssetReport, WaterPolygon } from './api'
+import type { AssetReport, CoverageGrid, WaterPolygon } from './api'
 import {
   DEFAULT_DRONE_FREQ_MHZ,
   DEFAULT_DRONE_SPEED_MPS,
@@ -10,9 +10,23 @@ import type {
   Asset,
   AssetType,
   Drone,
+  DroneRuntime,
   ObjectOfInterest,
+  SimulationStatus,
   Waypoint,
 } from './types'
+
+function freshRuntime(drone: Drone): DroneRuntime {
+  return {
+    id: drone.id,
+    position: { ...drone.start },
+    status: 'flying',
+    jammedBy: null,
+    jammerSignalDbm: null,
+    sjrDb: null,
+    intrudedOoi: null,
+  }
+}
 
 let assetCounter = 0
 function nextLabel(type: AssetType, existing: Asset[]): string {
@@ -97,6 +111,27 @@ type SpectralEyeState = {
   // random-rejecting positions in water.
   landSamples: Array<[number, number]> | null
 
+  // Per-asset cached coverage grids (mirrored from CoverageLayer's worker pool
+  // on every successful fetch). Used by the simulation to evaluate SJR at the
+  // drone's position each tick. Mutating-in-place by design: the Float32Array
+  // payload is large and zustand subscribers don't deep-compare it.
+  coverageGrids: Record<string, CoverageGrid>
+  // Terrain-vs-ellipsoid offset at the AOI center, in meters. Used to convert
+  // a drone's WGS84 ellipsoidal height into the local Sionna-frame z when
+  // sampling a coverage grid. Set by CoverageLayer once the globe sample is
+  // available (it depends on terrain having loaded first).
+  aoiGroundOffsetM: number | null
+
+  // ---- Simulation (Phase 6B/C/D) ----
+  simulationStatus: SimulationStatus
+  // Seconds since the simulation last started. Frozen when paused. Drives
+  // every drone's position via simulation.computeDronePosition().
+  simulationTime: number
+  // Per-drone live state. Always one entry per drone (created by addDrone,
+  // removed by removeDrone). Even when sim is idle, this holds the drone at
+  // its start position so DroneLayer can render uniformly.
+  droneRuntime: Record<string, DroneRuntime>
+
   setAoi: (aoi: AreaOfOperation | null) => void
   patchAoi: (patch: Partial<AreaOfOperation>) => void
   setDrawMode: (on: boolean) => void
@@ -136,6 +171,21 @@ type SpectralEyeState = {
   toggleSituationModeling: () => void
   setWaterPolygons: (p: WaterPolygon[] | null) => void
   setLandSamples: (s: Array<[number, number]> | null) => void
+
+  setCoverageGrid: (assetId: string, grid: CoverageGrid) => void
+  removeCoverageGrid: (assetId: string) => void
+  setAoiGroundOffsetM: (m: number | null) => void
+
+  startSimulation: () => void
+  pauseSimulation: () => void
+  resumeSimulation: () => void
+  resetSimulation: () => void
+  setSimulationTime: (t: number) => void
+  patchDroneRuntime: (id: string, patch: Partial<DroneRuntime>) => void
+  // Bulk replacement of the runtime map. Used by the per-frame simulation
+  // tick so multiple drones don't each trigger their own React re-render.
+  setDroneRuntimeMap: (m: Record<string, DroneRuntime>) => void
+  setSimulationStatus: (s: SimulationStatus) => void
 }
 
 export const useStore = create<SpectralEyeState>((set, get) => ({
@@ -158,6 +208,11 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
   situationModelingOpen: false,
   waterPolygons: null,
   landSamples: null,
+  coverageGrids: {},
+  aoiGroundOffsetM: null,
+  simulationStatus: 'idle',
+  simulationTime: 0,
+  droneRuntime: {},
 
   setAoi: (aoi) => set({ aoi }),
   patchAoi: (patch) =>
@@ -201,7 +256,12 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
         frequencyMhz: DEFAULT_DRONE_FREQ_MHZ,
         sjrThresholdDb: DEFAULT_SJR_THRESHOLD_DB,
       }
-      return { drones: [...s.drones, asset], selectedDroneId: id, dronePlanningId: id }
+      return {
+        drones: [...s.drones, asset],
+        selectedDroneId: id,
+        dronePlanningId: id,
+        droneRuntime: { ...s.droneRuntime, [id]: freshRuntime(asset) },
+      }
     })
     return asset!
   },
@@ -210,11 +270,16 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
       drones: s.drones.map((d) => (d.id === id ? { ...d, ...patch } : d)),
     })),
   removeDrone: (id) =>
-    set((s) => ({
-      drones: s.drones.filter((d) => d.id !== id),
-      selectedDroneId: s.selectedDroneId === id ? null : s.selectedDroneId,
-      dronePlanningId: s.dronePlanningId === id ? null : s.dronePlanningId,
-    })),
+    set((s) => {
+      const nextRuntime = { ...s.droneRuntime }
+      delete nextRuntime[id]
+      return {
+        drones: s.drones.filter((d) => d.id !== id),
+        selectedDroneId: s.selectedDroneId === id ? null : s.selectedDroneId,
+        dronePlanningId: s.dronePlanningId === id ? null : s.dronePlanningId,
+        droneRuntime: nextRuntime,
+      }
+    }),
   appendDroneWaypoint: (id, wp) =>
     set((s) => ({
       drones: s.drones.map((d) => (d.id === id ? { ...d, waypoints: [...d.waypoints, wp] } : d)),
@@ -268,6 +333,10 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
       selectedOoiId: null,
       placeMode: null,
       dronePlanningId: null,
+      droneRuntime: {},
+      coverageGrids: {},
+      simulationStatus: 'idle',
+      simulationTime: 0,
     }),
   setPendingDeploymentReports: (r) => set({ pendingDeploymentReports: r }),
   setImportingDeployment: (on) => set({ importingDeployment: on }),
@@ -298,4 +367,42 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
     set((s) => ({ situationModelingOpen: !s.situationModelingOpen })),
   setWaterPolygons: (p) => set({ waterPolygons: p }),
   setLandSamples: (s) => set({ landSamples: s }),
+
+  setCoverageGrid: (assetId, grid) =>
+    set((s) => ({ coverageGrids: { ...s.coverageGrids, [assetId]: grid } })),
+  removeCoverageGrid: (assetId) =>
+    set((s) => {
+      if (!(assetId in s.coverageGrids)) return {}
+      const next = { ...s.coverageGrids }
+      delete next[assetId]
+      return { coverageGrids: next }
+    }),
+  setAoiGroundOffsetM: (m) => set({ aoiGroundOffsetM: m }),
+
+  startSimulation: () =>
+    set((s) => {
+      // Reset every drone runtime to a clean flying state at its start point.
+      const runtime: Record<string, DroneRuntime> = {}
+      for (const d of s.drones) runtime[d.id] = freshRuntime(d)
+      return { simulationStatus: 'running', simulationTime: 0, droneRuntime: runtime }
+    }),
+  pauseSimulation: () =>
+    set((s) => (s.simulationStatus === 'running' ? { simulationStatus: 'paused' } : {})),
+  resumeSimulation: () =>
+    set((s) => (s.simulationStatus === 'paused' ? { simulationStatus: 'running' } : {})),
+  resetSimulation: () =>
+    set((s) => {
+      const runtime: Record<string, DroneRuntime> = {}
+      for (const d of s.drones) runtime[d.id] = freshRuntime(d)
+      return { simulationStatus: 'idle', simulationTime: 0, droneRuntime: runtime }
+    }),
+  setSimulationTime: (t) => set({ simulationTime: t }),
+  patchDroneRuntime: (id, patch) =>
+    set((s) => {
+      const cur = s.droneRuntime[id]
+      if (!cur) return {}
+      return { droneRuntime: { ...s.droneRuntime, [id]: { ...cur, ...patch } } }
+    }),
+  setDroneRuntimeMap: (m) => set({ droneRuntime: m }),
+  setSimulationStatus: (st) => set({ simulationStatus: st }),
 }))

@@ -89,3 +89,34 @@ export const DEFAULT_SJR_THRESHOLD_DB = 10
 export const DEFAULT_DRONE_AGL_M = 30
 
 export const DEFAULT_OOI_PERIMETER_M = 100
+
+// Assumed received-signal level at the drone from its operator's control link,
+// in dBm. SJR = DRONE_LINK_REFERENCE_DBM - jammer_dbm_at_drone. With a default
+// SJR threshold of 10 dB, the drone is jammed when a co-channel jammer
+// produces > -65 dBm at the drone's position.
+export const DRONE_LINK_REFERENCE_DBM = -55
+// A jammer is co-channel with the drone if its center frequency is within
+// this band (MHz). Wider than typical control-link bandwidth (~20 MHz) so
+// that minor mismatches in operator-tuned jammer setups still register.
+export const FREQUENCY_MATCH_TOLERANCE_MHZ = 80
+
+export type DroneStatus = 'flying' | 'finished' | 'jammed' | 'intrusion'
+
+// Per-drone live state during simulation. Maintained alongside drones[]; one
+// entry per drone, kept in sync by the store's add/remove/clear actions.
+export type DroneRuntime = {
+  id: string
+  position: Waypoint
+  status: DroneStatus
+  // Asset id of the jammer that took down the link. Set the first time SJR
+  // crosses the threshold, then locked in (drone freezes in place).
+  jammedBy: string | null
+  // Strongest co-channel jammer signal at the drone position, in dBm.
+  jammerSignalDbm: number | null
+  sjrDb: number | null
+  // OoI id whose perimeter the drone breached. Independent of `jammedBy` —
+  // a drone can intrude, get jammed, or both.
+  intrudedOoi: string | null
+}
+
+export type SimulationStatus = 'idle' | 'running' | 'paused' | 'finished'

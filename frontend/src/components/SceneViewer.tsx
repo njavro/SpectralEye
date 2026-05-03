@@ -22,6 +22,7 @@ import { CoverageLayer } from './CoverageLayer'
 import { DeploymentImporter } from './DeploymentImporter'
 import { DroneLayer } from './DroneLayer'
 import { OoILayer } from './OoILayer'
+import { SimulationRunner } from './SimulationRunner'
 import { ThreatInteraction } from './ThreatInteraction'
 
 type Props = {
@@ -297,6 +298,7 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
       <AssetLayer />
       <AssetInteraction />
       <ThreatInteraction />
+      <SimulationRunner />
       <DeploymentImporter />
     </>
   )

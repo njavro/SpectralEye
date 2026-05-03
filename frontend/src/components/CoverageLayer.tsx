@@ -89,6 +89,9 @@ export function CoverageLayer() {
           removedAny = true
         }
         cache.delete(id)
+        // Drop the grid from the simulation cache too — once an asset is
+        // deleted it can no longer contribute to SJR evaluation.
+        useStore.getState().removeCoverageGrid(id)
       }
     }
 
@@ -168,6 +171,14 @@ export function CoverageLayer() {
           )
 
           const groundOffsetM = aoiTerrainHeight(viewer, grid.bbox)
+          // Mirror the freshly-fetched grid + the AOI ground offset into the
+          // store so the simulation's SJR sampler has everything it needs to
+          // sample this jammer at any drone position. Only jammers actually
+          // gate jamming, but mirroring all types is uniform and cheap.
+          store.setCoverageGrid(asset.id, grid)
+          if (useStore.getState().aoiGroundOffsetM !== groundOffsetM) {
+            store.setAoiGroundOffsetM(groundOffsetM)
+          }
           const newPrimitive = buildCoveragePrimitive(asset, grid, groundOffsetM)
           if (!newPrimitive) {
             console.warn(`[CoverageLayer] ${asset.label}: no isosurface generated`)

@@ -19,10 +19,19 @@ export function OoILayer() {
   const { viewer } = useCesium()
   const ois = useStore((s) => s.ois)
   const selectedId = useStore((s) => s.selectedOoiId)
+  const droneRuntime = useStore((s) => s.droneRuntime)
   const known = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (!viewer) return
+
+    // OoI ids currently breached by at least one drone — drives the alarm
+    // coloring on the dome (red fill + red edge). Recomputed each render
+    // from the runtime map; cheap since drone count is small.
+    const alarmedIds = new Set<string>()
+    for (const rt of Object.values(droneRuntime)) {
+      if (rt.intrudedOoi) alarmedIds.add(rt.intrudedOoi)
+    }
 
     const live = new Set(ois.map((o) => o.id))
 
@@ -38,6 +47,7 @@ export function OoILayer() {
 
     for (const ooi of ois) {
       const isSelected = ooi.id === selectedId
+      const isAlarmed = alarmedIds.has(ooi.id)
       const center = Cartesian3.fromDegrees(ooi.longitude, ooi.latitude, ooi.height + 2)
 
       // Marker (small upward tetrahedron — using cylinder with small bottom radius).
@@ -86,16 +96,22 @@ export function OoILayer() {
         ooi.perimeterRadiusM,
       )
       let perim = viewer.entities.getById(perimId)
+      const fillColor = Color.fromCssColorString(
+        isAlarmed ? OOI_COLOR.perimeterFillAlarm : OOI_COLOR.perimeterFill,
+      )
+      const edgeColor = Color.fromCssColorString(
+        isAlarmed ? OOI_COLOR.perimeterEdgeAlarm : OOI_COLOR.perimeterEdge,
+      )
       if (!perim) {
         perim = new Entity({
           id: perimId,
           position: perimCenter,
           ellipsoid: {
             radii: perimRadii,
-            material: Color.fromCssColorString(OOI_COLOR.perimeterFill),
+            material: fillColor,
             outline: true,
-            outlineColor: Color.fromCssColorString(OOI_COLOR.perimeterEdge),
-            outlineWidth: 1,
+            outlineColor: edgeColor,
+            outlineWidth: isAlarmed ? 2 : 1,
             slicePartitions: 24,
             stackPartitions: 16,
             maximumCone: CesiumMath.PI_OVER_TWO, // top hemisphere only
@@ -106,7 +122,10 @@ export function OoILayer() {
         perim.position = perimCenter as unknown as Entity['position']
         if (perim.ellipsoid) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(perim.ellipsoid as any).radii = perimRadii
+          const e = perim.ellipsoid as any
+          e.radii = perimRadii
+          e.material = fillColor
+          e.outlineColor = edgeColor
         }
       }
 
@@ -118,7 +137,7 @@ export function OoILayer() {
       if (!live.has(id)) known.current.delete(id)
     }
     viewer.scene.requestRender()
-  }, [viewer, ois, selectedId])
+  }, [viewer, ois, selectedId, droneRuntime])
 
   // Sweep on unmount.
   useEffect(() => {

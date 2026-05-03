@@ -642,6 +642,71 @@ body,
   background: rgba(232, 115, 102, 0.08);
 }
 
+.drone-status {
+  font-size: 0.72rem;
+  margin-top: 0.15rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: 0.01em;
+}
+
+.drone-status.flying {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.drone-status.finished {
+  color: #818cf8;
+  background: rgba(129, 140, 248, 0.08);
+}
+
+.drone-status.jammed {
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.12);
+  font-weight: 600;
+}
+
+.drone-status.intrusion {
+  color: #ffffff;
+  background: #b91c1c;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.sim-time {
+  color: #6c7682;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-weight: 400;
+  font-size: 0.72rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sim-controls {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.sim-primary {
+  flex: 1;
+}
+
+.sim-primary.running {
+  background: #d97706;
+  border-color: #d97706;
+}
+
+.sim-primary.running:hover {
+  background: #f59e0b;
+  border-color: #f59e0b;
+}
+
+.sim-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ---------- Initializing overlay ---------- */
 
 .initializing-overlay {
