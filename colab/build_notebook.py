@@ -332,16 +332,24 @@ working end-to-end. To make the volume actually 3D-correct, replace
 at several Z values and stacks the results. Left as a TODO for v0.2.
 """
 
-RUNNER_CODE = '''SENSOR_REFERENCE_ERP_DBM = 30.0
+RUNNER_CODE = '''import mitsuba as mi
+from sionna.rt import RadioMapSolver
+
+SENSOR_REFERENCE_ERP_DBM = 30.0
 
 
 def compute_coverage_grid(asset, grid_spec, scene_path, scene_center):
-    """Returns (values_flat_float32, nx, ny, nz)."""
+    """Returns (values_flat_float32, nx, ny, nz).
+
+    Multi-altitude sweep — runs Sionna's RadioMapSolver once per Z slice and
+    stacks the results into a true 3D path-loss field. Slower than the
+    single-altitude approximation (one solver call per slice ≈ 2-4 s on T4)
+    but coverage volumes correctly bulge around buildings at each altitude.
+    """
     center_lon, center_lat = scene_center
     deg_per_m_lat = 1.0 / 111_320.0
     deg_per_m_lon = 1.0 / (111_320.0 * math.cos(math.radians(center_lat)))
 
-    # Voxel grid sampling matches the request.
     bbox = grid_spec["bbox"]
     width_m = (bbox["east"] - bbox["west"]) / deg_per_m_lon
     height_m = (bbox["north"] - bbox["south"]) / deg_per_m_lat
@@ -350,16 +358,12 @@ def compute_coverage_grid(asset, grid_spec, scene_path, scene_center):
     ny = max(1, int(math.ceil(height_m / voxel)))
     nz = max(1, int(math.ceil((grid_spec["height_max_m"] - grid_spec["height_min_m"]) / voxel)))
 
-    # Asset position in local frame.
     tx_x = (asset["longitude"] - center_lon) / deg_per_m_lon
     tx_y = (asset["latitude"] - center_lat) / deg_per_m_lat
     tx_z = float(asset["height"])
 
-    # Load scene fresh per call so different AOIs / asset positions get a
-    # clean state. (Performance optimization for production: cache by AOI.)
     scene = load_scene(scene_path)
     scene.frequency = float(asset["frequency_mhz"]) * 1e6
-
     scene.tx_array = PlanarArray(
         num_rows=1, num_cols=1,
         vertical_spacing=0.5, horizontal_spacing=0.5,
@@ -370,36 +374,38 @@ def compute_coverage_grid(asset, grid_spec, scene_path, scene_center):
         vertical_spacing=0.5, horizontal_spacing=0.5,
         pattern="iso", polarization="V",
     )
+    scene.add(Transmitter(name="tx0", position=[tx_x, tx_y, tx_z]))
 
-    tx = Transmitter(name="tx0", position=[tx_x, tx_y, tx_z])
-    scene.add(tx)
-
-    # Coverage map at one altitude (50 m above ground — representative drone alt).
-    cm_height = 50.0
-    cm = scene.coverage_map(
-        max_depth=3,
-        cm_cell_size=(voxel, voxel),
-        cm_orientation=[0.0, 0.0, 0.0],
-        cm_center=[0.0, 0.0, cm_height],
-        cm_size=[width_m, height_m],
-        num_samples=int(1e6),
+    rm_solver = RadioMapSolver()
+    erp_dbm = (
+        float(asset["erp_dbm"])
+        if asset["type"] != "sensor"
+        else SENSOR_REFERENCE_ERP_DBM
     )
-    # cm.path_gain is shape (1, ny, nx) — linear gain. Convert to dBm received power.
-    gain = cm.path_gain.numpy()[0]  # (ny, nx)
-    erp_dbm = float(asset["erp_dbm"]) if asset["type"] != "sensor" else SENSOR_REFERENCE_ERP_DBM
-    erp_linear = 10 ** ((erp_dbm - 30) / 10)  # convert dBm to W
-    rx_power_w = gain * erp_linear  # W
-    # Linear → dBm: 10*log10(P_W) + 30
+    erp_linear = 10 ** ((erp_dbm - 30) / 10)
     eps = 1e-30
-    rx_dbm_2d = 10.0 * np.log10(np.maximum(rx_power_w, eps)) + 30.0
 
-    # Replicate 2D slice across all Z. v0.2: replace with multi-height sweep.
-    rx_dbm_3d = np.broadcast_to(rx_dbm_2d.T[:, :, None], (nx, ny, nz))
-    flat = np.ascontiguousarray(rx_dbm_3d, dtype=np.float32).ravel(order="C")
-    return flat, nx, ny, nz
+    rx_dbm_3d = np.empty((nx, ny, nz), dtype=np.float32)
+    for k in range(nz):
+        z = grid_spec["height_min_m"] + (k + 0.5) * voxel
+        rm = rm_solver(
+            scene=scene,
+            max_depth=3,
+            cell_size=(voxel, voxel),
+            center=mi.Point3f(0.0, 0.0, z),
+            orientation=mi.Point3f(0.0, 0.0, 0.0),
+            size=mi.Point2f(width_m, height_m),
+            samples_per_tx=int(5e5),  # halved vs single-slice to bound total time
+        )
+        gain = rm.path_gain.numpy()[0]  # (ny, nx)
+        rx_dbm_3d[:, :, k] = (
+            10.0 * np.log10(np.maximum(gain * erp_linear, eps)) + 30.0
+        ).T
+
+    return rx_dbm_3d.ravel(order="C"), nx, ny, nz
 
 
-print("Sionna runner ready.")
+print("Sionna runner ready (multi-altitude sweep).")
 '''
 
 SELFTEST_MD = """## Step 5 — Self-test the pipeline

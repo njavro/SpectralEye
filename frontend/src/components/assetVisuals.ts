@@ -114,10 +114,16 @@ export const ASSET_TYPE_COLOR = TYPE_COLOR
 
 // Coverage isosurface threshold (dBm) per asset type. Voxel values above
 // this define the volume rendered as the asset's coverage.
+//
+// Jammer threshold tightened to -50 dBm because real Sionna ray tracing with
+// multipath gain produces rx > -70 dBm across an entire urban AOI for typical
+// 50 dBm ERP transmitters — the volume covers everything and marching cubes
+// finds no boundary. -50 keeps the volume bounded and operator-meaningful
+// (this is the rx power that genuinely overwhelms a receiver).
 export const COVERAGE_THRESHOLD_DBM: Record<AssetType, number> = {
-  jammer: -70, // jammer overpowers receiver at this rx power
-  sensor: -100, // sensor sensitivity to a reference 30-dBm emitter
-  relay: -90, // relay can reach this rx power
+  jammer: -50,
+  sensor: -100,
+  relay: -90,
 }
 
 // Translucent fill color per asset type for the coverage volume.
