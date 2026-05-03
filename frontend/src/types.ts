@@ -38,7 +38,10 @@ export function defaultAssetParams(type: AssetType): Pick<
 > {
   switch (type) {
     case 'jammer':
-      return { frequencyMhz: 2400, erpDbm: 50, antennaPattern: 'omni', status: 'deployed' }
+      // 40 dBm = 10 W. Typical man-portable counter-UAS jammer. The previous
+      // default of 50 dBm (100 W) was a vehicle-mounted area-denial system
+      // and made the contested airspace dominate any realistic AOI.
+      return { frequencyMhz: 2400, erpDbm: 40, antennaPattern: 'omni', status: 'deployed' }
     case 'sensor':
       return { frequencyMhz: 2400, erpDbm: 0, antennaPattern: 'omni', status: 'deployed' }
     case 'relay':
@@ -101,13 +104,16 @@ export const DRONE_LINK_REFERENCE_DBM = -55
 export const FREQUENCY_MATCH_TOLERANCE_MHZ = 80
 
 // "Contested airspace" threshold — voxels where a jammer's signal exceeds
-// this level can defeat a drone control link with the default SJR margin
-// (DRONE_LINK_REFERENCE_DBM - DEFAULT_SJR_THRESHOLD_DB = -55 - 10 = -65).
-// Used by ContestedAirspaceLayer to render the operationally-meaningful
-// "drone-jamming" volume — typically much smaller than the jammer's full
-// coverage shell since a drone needs much less signal to operate than a
-// jammer does to stomp it.
-export const JAMMER_CONTESTED_THRESHOLD_DBM = -65
+// this level mark the volume in which the jammer DOMINATES the drone control
+// link by ≥ DEFAULT_SJR_THRESHOLD_DB (10 dB). Equivalent to:
+//   DRONE_LINK_REFERENCE_DBM + DEFAULT_SJR_THRESHOLD_DB = -55 + 10 = -45
+// Tighter than the bare "drone could be jammed" boundary (~-65 dBm) because
+// the loose threshold makes a 1W+ jammer's contested volume swallow most
+// realistic AOIs and obscure the underlying terrain/building shadowing. The
+// -45 dBm threshold shows the jammer's true effective dominance zone — where
+// it reliably defeats the link with margin to spare — which is small enough
+// to reveal where the jammer actually has clean line-of-sight.
+export const JAMMER_CONTESTED_THRESHOLD_DBM = -45
 
 export type DroneStatus = 'flying' | 'finished' | 'jammed' | 'intrusion'
 
