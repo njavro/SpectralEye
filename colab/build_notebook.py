@@ -56,12 +56,27 @@ INSTALL_CODE = '''# Install Sionna RT, Mitsuba 3 (its renderer), OSM client, Fas
 # cloudflared binary for the tunnel (no signup required, free).
 !wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /content/cloudflared
 !chmod +x /content/cloudflared
-print("Install complete.")
+
+# Sionna's deps upgrade numpy/tensorflow in-place; the running kernel still
+# has the OLD modules cached, which produces "cannot import name _center
+# from numpy._core.umath" on the next cell. Force a kernel restart so all
+# cells from here on see the freshly installed versions.
+print("Install complete. Restarting runtime so the new numpy/tensorflow load cleanly...")
+print("After the kernel reconnects, run cells from the next one onwards.")
+import IPython
+IPython.Application.instance().kernel.do_shutdown(True)
 '''
 
 IMPORTS_MD = """## Step 2 — Imports and shared config
 
-If this cell errors with a CUDA-related message, re-check the GPU runtime
+The previous cell auto-restarts the runtime; once it reconnects, just run
+this cell — no need to re-run the install.
+
+If this cell errors with `cannot import name '_center' from
+numpy._core.umath`, the kernel didn't actually restart. Use **Runtime →
+Restart session** manually and run this cell again.
+
+If it errors with a CUDA-related message, re-check the GPU runtime
 selection in Step 1.
 """
 
