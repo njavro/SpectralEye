@@ -100,17 +100,32 @@ export function detectIntrusion(
 // SJR jamming (Phase 6D)
 // ---------------------------------------------------------------------------
 
-// Sample a coverage grid at a geographic position. Returns the path-loss value
-// in dBm at the nearest voxel, or null if the position lies outside the grid.
+// Sample a coverage grid at a geographic position. Returns the strongest
+// path-loss value in dBm found in the vertical column at the drone's
+// (lon, lat), or null if the horizontal position lies outside the grid.
 //
-// `groundOffsetM` is the WGS84 ellipsoidal height of the local Sionna ground
-// plane (z=0) at the AOI center — needed because the drone's `height` is
-// ellipsoidal but the grid's k axis is in local-frame meters above ground.
+// We take the MAX over the column rather than a single-voxel sample at the
+// drone's exact altitude on purpose: the contested airspace volume the
+// operator sees is the union of every altitude where the jammer signal
+// exceeds threshold, and the drone visually passes "through" that whole
+// column from above. Sampling only the drone's altitude produced confusing
+// "drone flying under the contested airspace doesn't get jammed" cases —
+// the strong jammer signal was right above it but our point sample missed.
+//
+// Operationally this means: if any altitude in the grid's vertical range
+// (0-100m AGL by default) at the drone's horizontal position has a
+// co-channel jammer above threshold, the drone is treated as in its zone.
+//
+// `ellipsoidalHeightM` and `groundOffsetM` are kept in the signature for
+// future per-altitude variants but are not consulted by the column-max
+// sampler.
 export function sampleCoverageAt(
   grid: CoverageGrid,
   lon: number,
   lat: number,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ellipsoidalHeightM: number,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   groundOffsetM: number,
 ): number | null {
   const [west, south, east, north] = grid.bbox
@@ -121,11 +136,13 @@ export function sampleCoverageAt(
   const i = Math.min(grid.nx - 1, Math.max(0, Math.floor((lon - west) / lonStepDeg)))
   const j = Math.min(grid.ny - 1, Math.max(0, Math.floor((lat - south) / latStepDeg)))
 
-  const localZ = ellipsoidalHeightM - groundOffsetM
-  const k = Math.floor((localZ - grid.height_min_m) / grid.voxel_size_m)
-  if (k < 0 || k >= grid.nz) return null
-
-  return grid.values[i * grid.ny * grid.nz + j * grid.nz + k]
+  const stride = i * grid.ny * grid.nz + j * grid.nz
+  let maxVal = -Infinity
+  for (let k = 0; k < grid.nz; k += 1) {
+    const v = grid.values[stride + k]
+    if (v > maxVal) maxVal = v
+  }
+  return Number.isFinite(maxVal) ? maxVal : null
 }
 
 export type JammingResult = {
