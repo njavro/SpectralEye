@@ -86,16 +86,12 @@ export type ObjectOfInterest = {
 export const DEFAULT_DRONE_SPEED_MPS = 15 // ~50 km/h, typical hobby quadcopter
 export const DEFAULT_DRONE_FREQ_MHZ = 2400
 export const DEFAULT_SJR_THRESHOLD_DB = 10
-// Cruise altitude — meters above ground level. Each waypoint is normalised
-// to this height above the local terrain, so a path crossing hilly territory
-// follows the contour at a constant offset rather than spiking up wherever
-// the operator happened to click on a rooftop.
+// Cruise altitude — meters above ground level. Every waypoint is normalised
+// to terrain_height(lon, lat) + DEFAULT_DRONE_AGL_M, so a path stays at a
+// fixed AGL regardless of whether the operator clicked on flat ground, a
+// hill, a building rooftop, or a defended-asset dome. Buildings and other
+// rendered geometry are deliberately ignored — see ThreatInteraction for why.
 export const DEFAULT_DRONE_AGL_M = 50
-// Vertical buffer above any tile-rendered building under a waypoint. The
-// waypoint's final altitude is max(terrain + DEFAULT_DRONE_AGL_M,
-// building_top + DRONE_BUILDING_CLEARANCE_M) so the drone naturally pops up
-// over tall structures instead of flying through them.
-export const DRONE_BUILDING_CLEARANCE_M = 10
 
 export const DEFAULT_OOI_PERIMETER_M = 100
 
