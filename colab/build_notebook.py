@@ -552,6 +552,20 @@ class _CoverageRequest(BaseModel):
 
 app = FastAPI(title="SpectralEye Sionna Coverage Server")
 
+# Serialize coverage compute. Two reasons:
+#   1. build_scene() writes /content/scene/{scene.xml,buildings.ply,ground.ply}
+#      to a single fixed path. Concurrent requests race on these files —
+#      one open(..., "w") truncates a file mid-read in the other handler,
+#      and Sionna's load_scene then chokes on an empty XML
+#      ("ParseError: no element found").
+#   2. The Colab T4 has a single GPU; truly parallel Sionna RT computes
+#      contend for it anyway, so serial requests are about the same wall
+#      time but never deadlock the renderer.
+# The frontend's bounded worker pool fires 2 requests at once; the lock
+# turns those into back-to-back compute, which the cloudflared free-tier
+# timeout handles fine for typical AOIs.
+_COVERAGE_LOCK = asyncio.Lock()
+
 
 @app.get("/health")
 def health():
@@ -559,12 +573,17 @@ def health():
 
 
 @app.post("/coverage/sionna")
-def coverage(req: _CoverageRequest):
+async def coverage(req: _CoverageRequest):
     bbox = req.grid_spec.bbox.model_dump()
     asset = req.asset.model_dump()
     grid_spec = req.grid_spec.model_dump()
     grid_spec["bbox"] = bbox
 
+    async with _COVERAGE_LOCK:
+        return _run_coverage(bbox, asset, grid_spec)
+
+
+def _run_coverage(bbox, asset, grid_spec):
     try:
         t0 = time.time()
         scene_path, scene_center = build_scene(bbox)
