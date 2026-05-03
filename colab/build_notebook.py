@@ -51,7 +51,12 @@ time; subsequent runs reuse the cached environment for the session.
 
 INSTALL_CODE = '''# Install Sionna RT, Mitsuba 3 (its renderer), OSM HTTP client, FastAPI server,
 # triangulation lib, and cloudflared for the public tunnel.
-!pip install -q sionna mitsuba shapely requests mapbox-earcut fastapi "uvicorn[standard]" nest-asyncio pydantic
+#
+# numpy<2.1 pinned because pip upgrading numpy mid-install (to satisfy a
+# transient sionna dep) leaves numpy in a half-upgraded state on disk —
+# the kernel reload then fails with "cannot import _center from
+# numpy._core.umath". Pinning here forces a clean version up-front.
+!pip install -q "numpy<2.1" sionna mitsuba shapely requests mapbox-earcut fastapi "uvicorn[standard]" nest-asyncio pydantic
 
 # cloudflared binary for the tunnel (no signup required, free).
 !wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /content/cloudflared
