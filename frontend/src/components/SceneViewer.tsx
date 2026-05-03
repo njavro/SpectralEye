@@ -163,6 +163,12 @@ function clearAoiBorder(viewer: CesiumViewer) {
 function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsReady }: Props) {
   const { viewer } = useCesium()
   const tilesetRef = useRef<Cesium3DTileset | null>(null)
+  // Optional Google Photorealistic 3D Tiles overlay — purely cosmetic, has
+  // zero impact on RF propagation (Sionna runs server-side off OSM polygons).
+  // Enabled by setting VITE_GOOGLE_MAP_TILES_API_KEY in frontend/.env. When
+  // active, the OSM Buildings tileset is hidden inside the AOI so the two
+  // don't double up.
+  const photoTilesetRef = useRef<Cesium3DTileset | null>(null)
   const initializedRef = useRef(false)
 
   useEffect(() => {
@@ -217,6 +223,36 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
       .catch((err) => {
         console.error('[SpectralEye] failed to load OSM Buildings', err)
       })
+
+    // Optional Google Photorealistic 3D Tiles. Only loaded when the operator
+    // has set VITE_GOOGLE_MAP_TILES_API_KEY — otherwise the scene falls back
+    // to OSM Buildings and looks identical to before.
+    const googleApiKey = import.meta.env.VITE_GOOGLE_MAP_TILES_API_KEY as string | undefined
+    if (googleApiKey) {
+      Cesium3DTileset.fromUrl(
+        `https://tile.googleapis.com/v1/3dtiles/root.json?key=${googleApiKey}`,
+        // Google's terms require attribution to be visible; Cesium handles it.
+        { showCreditsOnScreen: true },
+      )
+        .then((tileset) => {
+          if (v.isDestroyed()) return
+          tileset.show = false
+          tileset.maximumScreenSpaceError = 8
+          tileset.cacheBytes = 1_073_741_824 // 1 GB
+          tileset.preloadWhenHidden = true
+          v.scene.primitives.add(tileset)
+          photoTilesetRef.current = tileset
+          v.scene.requestRender()
+          console.log('[SpectralEye] Google Photorealistic 3D Tiles registered')
+        })
+        .catch((err) => {
+          console.error('[SpectralEye] failed to load Google Photorealistic Tiles', err)
+        })
+    } else {
+      console.log(
+        '[SpectralEye] VITE_GOOGLE_MAP_TILES_API_KEY not set — using OSM Buildings only',
+      )
+    }
   }, [viewer])
 
   // AOI lifecycle: clip globe + clip buildings + fly camera + wait for tiles.
@@ -233,6 +269,11 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
         t.show = false
         t.clippingPolygons = new ClippingPolygonCollection()
       }
+      const pt = photoTilesetRef.current
+      if (pt) {
+        pt.show = false
+        pt.clippingPolygons = new ClippingPolygonCollection()
+      }
       viewer.scene.requestRender()
       return
     }
@@ -244,8 +285,19 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
     viewer.scene.globe.maximumScreenSpaceError = 1
     setAoiBorder(viewer, aoi.bbox)
 
+    const pt = photoTilesetRef.current
     const t = tilesetRef.current
-    if (t) {
+    if (pt) {
+      // Photorealistic available → it owns the buildings inside the AOI.
+      // Hide the OSM tileset to avoid double-rendering.
+      pt.show = true
+      pt.clippingPolygons = bboxClippingPolygons(aoi.bbox)
+      if (t) {
+        t.show = false
+        t.clippingPolygons = bboxClippingPolygons(aoi.bbox)
+      }
+    } else if (t) {
+      // No photorealistic tileset → fall back to OSM Buildings.
       t.show = true
       t.clippingPolygons = bboxClippingPolygons(aoi.bbox)
     }
@@ -266,7 +318,9 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
 
     flyToAoi(viewer, aoi.bbox).then(() => {
       if (cancelled) return
-      const tileset = tilesetRef.current
+      // Wait on whichever tileset is actually rendering buildings — photo
+      // takes precedence when present.
+      const tileset = photoTilesetRef.current ?? tilesetRef.current
       if (!tileset) {
         finish('no tileset')
         return
