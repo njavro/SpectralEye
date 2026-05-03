@@ -178,7 +178,7 @@ class RemoteSionnaSource:
     Same request/response shape as MockSionnaSource. Selected automatically
     when SIONNA_REMOTE_URL is set in the backend's environment."""
 
-    def __init__(self, base_url: str, timeout_s: float = 180.0):
+    def __init__(self, base_url: str, timeout_s: float = 600.0):
         self.base_url = base_url.rstrip("/")
         self.timeout_s = timeout_s
 
