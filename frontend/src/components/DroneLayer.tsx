@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useCesium } from 'resium'
 import {
+  CallbackProperty,
   Cartesian3,
   Color,
   Entity,
@@ -36,6 +37,14 @@ export function DroneLayer() {
   const selectedId = useStore((s) => s.selectedDroneId)
   const planningId = useStore((s) => s.dronePlanningId)
   const known = useRef<Set<string>>(new Set())
+  // Per-drone live Cartesian — each entity reads from this map via a
+  // CallbackProperty so Cesium re-evaluates the position every frame.
+  // Assigning a raw Cartesian3 to entity.position works for labels but does
+  // NOT trigger cylinder-geometry re-renders (the cylinder visualizer needs
+  // a proper PositionProperty), which is why the label was drifting away
+  // from a stuck cylinder.
+  const dronePosRef = useRef<Map<string, Cartesian3>>(new Map())
+  const jamLinkRef = useRef<Map<string, [Cartesian3, Cartesian3]>>(new Map())
 
   useEffect(() => {
     if (!viewer) return
@@ -48,6 +57,8 @@ export function DroneLayer() {
           const e = viewer.entities.getById(`${ID_PREFIX}-${id}-${sub}`)
           if (e) viewer.entities.remove(e)
         }
+        dronePosRef.current.delete(id)
+        jamLinkRef.current.delete(id)
       }
     }
 
@@ -57,15 +68,24 @@ export function DroneLayer() {
       const rt = droneRuntime[drone.id]
       const livePos = rt?.position ?? drone.start
       const markerCart = Cartesian3.fromDegrees(livePos.longitude, livePos.latitude, livePos.height)
+      // Push the latest position into the ref BEFORE the visualizer reads it.
+      // The CallbackProperty below pulls from this ref every frame.
+      dronePosRef.current.set(drone.id, markerCart)
 
       // ---- Marker (cylinder) at the drone's current runtime position ----
       const markerColor = colorForStatus(rt, isSelected)
       const markerId = `${ID_PREFIX}-${drone.id}-marker`
       let marker = viewer.entities.getById(markerId)
       if (!marker) {
+        // Capture id once for the closure — drone.id is stable for the entity's lifetime.
+        const droneId = drone.id
+        const positionProperty = new CallbackProperty(
+          () => dronePosRef.current.get(droneId) ?? markerCart,
+          false, // not constant — re-evaluate every frame
+        )
         marker = new Entity({
           id: markerId,
-          position: markerCart,
+          position: positionProperty,
           cylinder: {
             length: 8,
             topRadius: 3,
@@ -89,12 +109,11 @@ export function DroneLayer() {
           },
         })
         viewer.entities.add(marker)
-      } else {
-        marker.position = markerCart as unknown as Entity['position']
-        if (marker.cylinder) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(marker.cylinder as any).material = markerColor
-        }
+      } else if (marker.cylinder) {
+        // Position auto-updates via the CallbackProperty + ref. Only material
+        // and selection styling need a per-render write.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(marker.cylinder as any).material = markerColor
       }
 
       // ---- Planned path polyline (start → waypoints) ----
@@ -127,13 +146,15 @@ export function DroneLayer() {
 
       // ---- Jamming link (red line jammer → drone) ----
       // Drawn whenever the runtime says this drone is jammed and we can find
-      // the offending asset. Removed on every other state.
+      // the offending asset. Same CallbackProperty trick as the marker so the
+      // line endpoints follow the drone if it gets moved post-jam (e.g. a
+      // future "you can drag a jammed drone to free it" feature).
       const jamId = `${ID_PREFIX}-${drone.id}-jamlink`
       const jammer = rt?.jammedBy ? assets.find((a) => a.id === rt.jammedBy) : null
       let jamLink = viewer.entities.getById(jamId)
       if (jammer && rt) {
         const jamFrom = Cartesian3.fromDegrees(jammer.longitude, jammer.latitude, jammer.height + 4)
-        const jamTo = markerCart
+        jamLinkRef.current.set(drone.id, [jamFrom, markerCart])
         const linkMaterial = new PolylineDashMaterialProperty({
           color: Color.fromCssColorString('#ef4444'),
           dashLength: 18,
@@ -141,24 +162,28 @@ export function DroneLayer() {
         })
         if (!jamLink || !jamLink.polyline) {
           if (jamLink) viewer.entities.remove(jamLink)
+          const droneId = drone.id
+          const positionsProperty = new CallbackProperty(
+            () => jamLinkRef.current.get(droneId) ?? [jamFrom, markerCart],
+            false,
+          )
           jamLink = new Entity({
             id: jamId,
             polyline: {
-              positions: [jamFrom, jamTo],
+              positions: positionsProperty,
               width: 3,
               material: linkMaterial,
               clampToGround: false,
             },
           })
           viewer.entities.add(jamLink)
-        } else {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(jamLink.polyline as any).positions = [jamFrom, jamTo]
+        } else if (jamLink.polyline) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ;(jamLink.polyline as any).material = linkMaterial
         }
       } else if (jamLink) {
         viewer.entities.remove(jamLink)
+        jamLinkRef.current.delete(drone.id)
       }
 
       known.current.add(drone.id)
