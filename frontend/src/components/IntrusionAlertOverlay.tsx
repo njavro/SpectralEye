@@ -1,28 +1,19 @@
 import { useStore } from '../store'
-import type { Drone, ObjectOfInterest } from '../types'
 
-// Top-mounted banner that screams when any drone is currently inside an SPoI
-// safety perimeter. Auto-shows on intrusion, auto-clears when every drone is
-// either back outside the dome or has been removed. Lists which drone
-// breached which SPoI so the operator can identify the threat at a glance.
+// Top-mounted critical alert that latches once any drone has breached an SPoI
+// safety perimeter. Stays visible until the operator clicks "Situation
+// mitigated" — even after the drone exits the dome or the simulation
+// finishes — because a brief fly-through is exactly the case where the alert
+// must NOT vanish before the operator notices it. Reset also clears the
+// latch so a fresh run starts clean.
 //
 // Renders as a portal-style overlay outside the Cesium viewer tree — must be
 // mounted at the root of the app so it sits above the 3D scene and panels.
 export function IntrusionAlertOverlay() {
-  const drones = useStore((s) => s.drones)
-  const droneRuntime = useStore((s) => s.droneRuntime)
-  const ois = useStore((s) => s.ois)
+  const events = useStore((s) => s.unacknowledgedIntrusions)
+  const clear = useStore((s) => s.clearIntrusionEvents)
 
-  const intrusions: Array<{ drone: Drone; ooi: ObjectOfInterest }> = []
-  for (const drone of drones) {
-    const rt = droneRuntime[drone.id]
-    if (!rt?.intrudedOoi) continue
-    const ooi = ois.find((o) => o.id === rt.intrudedOoi)
-    if (!ooi) continue
-    intrusions.push({ drone, ooi })
-  }
-
-  if (intrusions.length === 0) return null
+  if (events.length === 0) return null
 
   return (
     <div className="intrusion-alert" role="alert" aria-live="assertive">
@@ -34,17 +25,25 @@ export function IntrusionAlertOverlay() {
           CRITICAL WARNING — UNKNOWN ENTITY PENETRATED THE PERIMETER
         </div>
         <ul className="intrusion-alert-details">
-          {intrusions.map(({ drone, ooi }) => (
-            <li key={drone.id}>
-              <strong>{drone.label}</strong> inside <strong>{ooi.label}</strong>
+          {events.map((ev) => (
+            <li key={`${ev.droneId}::${ev.ooiId}`}>
+              <strong>{ev.droneLabel}</strong> breached <strong>{ev.ooiLabel}</strong>
               {' · '}
               <span className="intrusion-alert-coord">
-                {drone.frequencyMhz.toFixed(0)} MHz
+                T+{ev.detectedAt.toFixed(1)}s · {ev.frequencyMhz.toFixed(0)} MHz
               </span>
             </li>
           ))}
         </ul>
       </div>
+      <button
+        type="button"
+        className="intrusion-alert-mitigate"
+        onClick={clear}
+        title="Acknowledge and dismiss the alert"
+      >
+        Situation Mitigated
+      </button>
     </div>
   )
 }

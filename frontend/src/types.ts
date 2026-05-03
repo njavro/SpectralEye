@@ -142,3 +142,18 @@ export type DroneRuntime = {
 }
 
 export type SimulationStatus = 'idle' | 'running' | 'paused' | 'finished'
+
+// A latched perimeter-breach record. Intrusion events accumulate here as the
+// simulation detects them and persist until the operator acknowledges via the
+// "Situation mitigated" button on the alert overlay — even after the drone
+// exits the dome or the run ends. Labels are captured at detection time so
+// the record stays interpretable even if the drone is later removed.
+export type IntrusionEvent = {
+  droneId: string
+  droneLabel: string
+  ooiId: string
+  ooiLabel: string
+  // Simulation time (seconds) at the moment of breach.
+  detectedAt: number
+  frequencyMhz: number
+}

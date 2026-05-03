@@ -11,6 +11,7 @@ import type {
   AssetType,
   Drone,
   DroneRuntime,
+  IntrusionEvent,
   ObjectOfInterest,
   SimulationStatus,
   Waypoint,
@@ -137,6 +138,12 @@ type SpectralEyeState = {
   // default; renders only for jammers whose coverage grid is cached.
   contestedAirspaceVisible: boolean
 
+  // Latched perimeter-breach log. New events appended on detect; cleared
+  // only when the operator clicks "Situation mitigated" on the alert
+  // banner OR when the simulation is reset. Survives the drone exiting
+  // the dome / the run finishing, so a brief breach stays visible.
+  unacknowledgedIntrusions: IntrusionEvent[]
+
   setAoi: (aoi: AreaOfOperation | null) => void
   patchAoi: (patch: Partial<AreaOfOperation>) => void
   setDrawMode: (on: boolean) => void
@@ -194,6 +201,9 @@ type SpectralEyeState = {
 
   toggleContestedAirspace: () => void
   setContestedAirspaceVisible: (on: boolean) => void
+
+  recordIntrusionEvent: (event: IntrusionEvent) => void
+  clearIntrusionEvents: () => void
 }
 
 export const useStore = create<SpectralEyeState>((set, get) => ({
@@ -222,6 +232,7 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
   simulationTime: 0,
   droneRuntime: {},
   contestedAirspaceVisible: false,
+  unacknowledgedIntrusions: [],
 
   setAoi: (aoi) => set({ aoi }),
   patchAoi: (patch) =>
@@ -346,6 +357,7 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
       coverageGrids: {},
       simulationStatus: 'idle',
       simulationTime: 0,
+      unacknowledgedIntrusions: [],
     }),
   setPendingDeploymentReports: (r) => set({ pendingDeploymentReports: r }),
   setImportingDeployment: (on) => set({ importingDeployment: on }),
@@ -403,7 +415,12 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
     set((s) => {
       const runtime: Record<string, DroneRuntime> = {}
       for (const d of s.drones) runtime[d.id] = freshRuntime(d)
-      return { simulationStatus: 'idle', simulationTime: 0, droneRuntime: runtime }
+      return {
+        simulationStatus: 'idle',
+        simulationTime: 0,
+        droneRuntime: runtime,
+        unacknowledgedIntrusions: [],
+      }
     }),
   setSimulationTime: (t) => set({ simulationTime: t }),
   patchDroneRuntime: (id, patch) =>
@@ -418,4 +435,16 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
   toggleContestedAirspace: () =>
     set((s) => ({ contestedAirspaceVisible: !s.contestedAirspaceVisible })),
   setContestedAirspaceVisible: (on) => set({ contestedAirspaceVisible: on }),
+
+  recordIntrusionEvent: (event) =>
+    set((s) => {
+      // Dedupe on (drone, ooi) — a drone re-entering the same dome doesn't
+      // stack; the original record stays. New (drone, ooi) pairs append.
+      const exists = s.unacknowledgedIntrusions.some(
+        (e) => e.droneId === event.droneId && e.ooiId === event.ooiId,
+      )
+      if (exists) return {}
+      return { unacknowledgedIntrusions: [...s.unacknowledgedIntrusions, event] }
+    }),
+  clearIntrusionEvents: () => set({ unacknowledgedIntrusions: [] }),
 }))

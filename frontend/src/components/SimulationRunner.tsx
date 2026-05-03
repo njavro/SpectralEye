@@ -65,18 +65,20 @@ export function SimulationRunner() {
         const { position, finished } = computeDronePosition(drone, nextTime)
         const jamming = evaluateJamming(drone, position, s.assets, s.coverageGrids, offset)
         const intruded = detectIntrusion(position, s.ois)
-        // One-shot transition log when intrusion state changes — easier to
-        // diagnose "drone visually inside dome but no alert" than to scrape
-        // 60 fps of state. Drops once we're confident the geometry agrees
-        // with what the operator sees.
-        if ((intruded?.id ?? null) !== rt.intrudedOoi) {
-          if (intruded) {
-            console.log(
-              `[Sim] ${drone.label} ENTER ${intruded.label} — drone(${position.longitude.toFixed(6)},${position.latitude.toFixed(6)},${position.height.toFixed(1)}) ooi(${intruded.longitude.toFixed(6)},${intruded.latitude.toFixed(6)},${intruded.height.toFixed(1)}) r=${intruded.perimeterRadiusM}`,
-            )
-          } else if (rt.intrudedOoi) {
-            console.log(`[Sim] ${drone.label} EXIT ${rt.intrudedOoi}`)
-          }
+        // Latch the alert: on an enter transition, record an event into the
+        // store so the alert banner persists past the geometric breach (the
+        // drone may exit the dome on the next waypoint or the run may finish
+        // with a single fly-through). Cleared by "Situation mitigated" or
+        // by Reset.
+        if (intruded && intruded.id !== rt.intrudedOoi) {
+          s.recordIntrusionEvent({
+            droneId: drone.id,
+            droneLabel: drone.label,
+            ooiId: intruded.id,
+            ooiLabel: intruded.label,
+            detectedAt: nextTime,
+            frequencyMhz: drone.frequencyMhz,
+          })
         }
 
         if (jamming.jammed && jamming.strongestJammerId) {

@@ -775,6 +775,33 @@ body,
   opacity: 0.85;
 }
 
+.intrusion-alert-mitigate {
+  pointer-events: auto;
+  margin-left: 0.6rem;
+  padding: 0.55rem 1rem;
+  background: #ffffff;
+  color: #991b1b;
+  border: 2px solid #ffffff;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: background 0.12s, color 0.12s, transform 0.12s;
+  white-space: nowrap;
+}
+
+.intrusion-alert-mitigate:hover {
+  background: #fef2f2;
+  transform: scale(1.03);
+}
+
+.intrusion-alert-mitigate:active {
+  transform: scale(0.97);
+}
+
 @keyframes intrusion-alert-pulse {
   0%, 100% {
     box-shadow: 0 0 28px rgba(220, 38, 38, 0.45), 0 6px 24px rgba(0, 0, 0, 0.6);
