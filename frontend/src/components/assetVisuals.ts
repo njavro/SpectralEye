@@ -149,3 +149,10 @@ export const COVERAGE_VOLUME_RGB: Record<AssetType, [number, number, number]> = 
 export const COVERAGE_CONTOUR_OFFSETS_DB = [0, 15, 30] as const
 // Alpha per contour (matches order of CONTOUR_OFFSETS_DB).
 export const COVERAGE_CONTOUR_ALPHA = [0.10, 0.18, 0.28] as const
+
+// When a co-channel jammer is present and degrading a relay/sensor, render
+// switches to a two-shell layout: a faded "ghost" of the nominal coverage
+// at base threshold, plus a vivid effective shell inside it. The visible
+// gap between them is the volume the jammer killed.
+export const COVERAGE_NOMINAL_GHOST_ALPHA = 0.06
+export const COVERAGE_EFFECTIVE_ALPHA = 0.22

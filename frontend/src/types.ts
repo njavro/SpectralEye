@@ -105,6 +105,20 @@ export const DRONE_LINK_REFERENCE_DBM = -55
 // that minor mismatches in operator-tuned jammer setups still register.
 export const FREQUENCY_MATCH_TOLERANCE_MHZ = 80
 
+// Effective-coverage tolerances per non-jammer asset type — how many dB of
+// margin the asset needs over the strongest co-channel jammer at a given
+// voxel for that voxel to still count as "covered." Used by CoverageLayer
+// to render a vivid "effective" volume inside each asset's faded nominal
+// shell, so the operator sees friendly footprint shrink in real time when
+// a jammer is added.
+//
+//   relay  : digital comms link → ~10 dB SJR margin matches the drone-link
+//            assumption used elsewhere in the sim.
+//   sensor : detection rather than communication → ~6 dB above the raised
+//            noise floor a co-channel jammer creates.
+export const RELAY_SJR_MARGIN_DB = 10
+export const SENSOR_SNR_MARGIN_DB = 6
+
 // Contested-airspace boundaries — DERIVED from the simulation's jamming
 // constants so the rendered volume can never drift out of sync with what
 // drones actually experience. Two nested shells give the operator a gradient

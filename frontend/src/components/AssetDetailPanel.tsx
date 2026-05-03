@@ -1,7 +1,8 @@
 import { useStore } from '../store'
 import { ASSET_TYPE_LABELS } from '../types'
 import type { Asset } from '../types'
-import { ASSET_TYPE_COLOR } from './assetVisuals'
+import { ASSET_TYPE_COLOR, COVERAGE_THRESHOLD_DBM } from './assetVisuals'
+import { computeRetention } from './coverageMath'
 
 export function AssetDetailPanel() {
   const selectedId = useStore((s) => s.selectedAssetId)
@@ -11,8 +12,21 @@ export function AssetDetailPanel() {
   const selectAsset = useStore((s) => s.selectAsset)
   const coverageVisible = useStore((s) => (selectedId ? s.visibleCoverageIds.has(selectedId) : false))
   const toggleCoverageVisibility = useStore((s) => s.toggleCoverageVisibility)
+  const allAssets = useStore((s) => s.assets)
+  const coverageGrids = useStore((s) => s.coverageGrids)
 
   if (!asset) return null
+
+  // Effective-vs-nominal retention — only meaningful for non-jammer assets
+  // whose own grid is cached AND that have at least one co-channel jammer
+  // also cached. Returns null otherwise (we hide the badge in those cases
+  // because the number would be misleading "100%" without context).
+  const retention = computeRetention(
+    asset,
+    coverageGrids,
+    allAssets,
+    COVERAGE_THRESHOLD_DBM[asset.type],
+  )
 
   const set = <K extends keyof Asset>(key: K, value: Asset[K]) =>
     updateAsset(asset.id, { [key]: value } as Partial<Asset>)
@@ -121,6 +135,20 @@ export function AssetDetailPanel() {
         </div>
       </div>
 
+      {retention && retention.hasJammer && (
+        <div className="detail-section">
+          <label className="detail-label">
+            Effective coverage retained{' '}
+            <span className="detail-unit">(under co-channel jamming)</span>
+          </label>
+          <RetentionBar ratio={retention.ratio} />
+          <div className="detail-input mono detail-readonly retention-detail">
+            {(retention.ratio * 100).toFixed(0)}% — {retention.effective.toLocaleString()} of{' '}
+            {retention.nominal.toLocaleString()} voxels survive
+          </div>
+        </div>
+      )}
+
       <div className="detail-actions">
         <button
           type="button"
@@ -138,5 +166,20 @@ export function AssetDetailPanel() {
         </button>
       </div>
     </aside>
+  )
+}
+
+function RetentionBar({ ratio }: { ratio: number }) {
+  // Clamp to [0, 1] so a runaway computation can't blow up the bar width.
+  const pct = Math.max(0, Math.min(1, ratio)) * 100
+  // Color gradient: green (intact) → orange (degraded) → red (mostly lost).
+  const color = pct >= 75 ? '#4ade80' : pct >= 40 ? '#fb923c' : '#dc2626'
+  return (
+    <div className="retention-bar">
+      <div
+        className="retention-bar-fill"
+        style={{ width: `${pct.toFixed(1)}%`, background: color }}
+      />
+    </div>
   )
 }

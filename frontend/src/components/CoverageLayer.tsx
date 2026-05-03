@@ -25,9 +25,12 @@ import type { Asset } from '../types'
 import {
   COVERAGE_CONTOUR_ALPHA,
   COVERAGE_CONTOUR_OFFSETS_DB,
+  COVERAGE_EFFECTIVE_ALPHA,
+  COVERAGE_NOMINAL_GHOST_ALPHA,
   COVERAGE_THRESHOLD_DBM,
   COVERAGE_VOLUME_RGB,
 } from './assetVisuals'
+import { buildMaxJammerField, effectiveToleranceDb } from './coverageMath'
 
 // Default voxel grid spec: 25 m horizontal, 0–100 m vertical. Tight vertical
 // range covers most drone-altitude scenarios and keeps per-request Sionna
@@ -43,8 +46,9 @@ const DEFAULT_HEIGHT_MAX_M = 100
 // network without contention.
 const MAX_CONCURRENT_FETCHES = 2
 
-// A "coverage params" hash — only re-fetch when something material changes.
-function coverageKey(a: Asset): string {
+// "params" hash — what determines the fetched grid. Triggers a refetch
+// when changed.
+function paramsKeyFor(a: Asset): string {
   return [
     a.id,
     a.type,
@@ -57,8 +61,32 @@ function coverageKey(a: Asset): string {
   ].join('|')
 }
 
+// "render" hash — what determines the visualisation (params + co-channel
+// jammer state). When this changes but params didn't, we rebuild the
+// primitive from the cached grid without re-fetching from Sionna.
+function renderKeyFor(
+  a: Asset,
+  allAssets: Asset[],
+  coverageGrids: Record<string, CoverageGrid>,
+): string {
+  const base = paramsKeyFor(a)
+  if (a.type === 'jammer') return base
+  // Sort to keep the key stable across array order changes.
+  const cochannel = allAssets
+    .filter(
+      (o) =>
+        o.type === 'jammer'
+        && Math.abs(o.frequencyMhz - a.frequencyMhz) <= 80, // FREQUENCY_MATCH_TOLERANCE_MHZ
+    )
+    .map((o) => `${o.id}@${coverageGrids[o.id]?.computed_at ?? 'none'}`)
+    .sort()
+    .join(',')
+  return `${base}|cc:${cochannel}`
+}
+
 type Entry = {
-  key: string
+  paramsKey: string
+  renderKey: string
   primitive: Primitive | null
   abort: AbortController
 }
@@ -69,6 +97,10 @@ export function CoverageLayer() {
   const aoi = useStore((s) => s.aoi)
   const visibleIds = useStore((s) => s.visibleCoverageIds)
   const typesVisible = useStore((s) => s.coverageTypesVisible)
+  // Subscribe so the effect re-runs when a jammer's grid arrives — that's
+  // what triggers the per-non-jammer "rebuild from cached grid, no refetch"
+  // path below (jammer state → renderKey changes → primitive rebuilds).
+  const coverageGrids = useStore((s) => s.coverageGrids)
   const cacheRef = useRef<Map<string, Entry>>(new Map())
 
   useEffect(() => {
@@ -109,18 +141,44 @@ export function CoverageLayer() {
     // requestRenderMode = true means scene only redraws when explicitly asked.
     if (removedAny && !viewer.isDestroyed()) viewer.scene.requestRender()
 
-    // Build the list of assets that need a fresh fetch.
+    // Two-pass: (1) for each visible asset whose ONLY change is renderKey
+    // (i.e. a co-channel jammer's grid arrived/changed), rebuild the
+    // primitive locally from the cached grid — no network round trip;
+    // (2) for assets whose paramsKey changed or that have no cached primitive,
+    // queue a fresh fetch.
     const pending: Array<{ asset: Asset; entry: Entry }> = []
     for (const asset of assets) {
       if (!visibleIds.has(asset.id)) continue
       if (typesVisible[asset.type] === false) continue
-      const key = coverageKey(asset)
+      const pKey = paramsKeyFor(asset)
+      const rKey = renderKeyFor(asset, assets, coverageGrids)
       const existing = cache.get(asset.id)
-      if (existing && existing.key === key) continue
-      if (existing) existing.abort.abort()
+      if (existing && existing.paramsKey === pKey && existing.renderKey === rKey) continue
 
+      // (1) Same fetched grid, only render context changed → rebuild locally.
+      if (existing && existing.paramsKey === pKey) {
+        const grid = coverageGrids[asset.id]
+        if (grid) {
+          const groundOffsetM = aoiTerrainHeight(viewer, grid.bbox)
+          const newPrimitive = buildCoveragePrimitive(asset, grid, groundOffsetM, assets, coverageGrids)
+          if (existing.primitive) viewer.scene.primitives.remove(existing.primitive)
+          if (newPrimitive) viewer.scene.primitives.add(newPrimitive)
+          existing.primitive = newPrimitive
+          existing.renderKey = rKey
+          if (!viewer.isDestroyed()) viewer.scene.requestRender()
+          continue
+        }
+      }
+
+      // (2) Need a fresh fetch.
+      if (existing) existing.abort.abort()
       const abort = new AbortController()
-      const entry: Entry = { key, primitive: existing?.primitive ?? null, abort }
+      const entry: Entry = {
+        paramsKey: pKey,
+        renderKey: rKey,
+        primitive: existing?.primitive ?? null,
+        abort,
+      }
       cache.set(asset.id, entry)
       pending.push({ asset, entry })
     }
@@ -179,7 +237,17 @@ export function CoverageLayer() {
           if (useStore.getState().aoiGroundOffsetM !== groundOffsetM) {
             store.setAoiGroundOffsetM(groundOffsetM)
           }
-          const newPrimitive = buildCoveragePrimitive(asset, grid, groundOffsetM)
+          // Pass the LATEST store snapshot so the just-fetched grid (already
+          // pushed via setCoverageGrid above) is visible to renderKeyFor /
+          // buildMaxJammerField for any non-jammers in the same batch.
+          const latestGrids = useStore.getState().coverageGrids
+          const newPrimitive = buildCoveragePrimitive(
+            asset,
+            grid,
+            groundOffsetM,
+            assets,
+            latestGrids,
+          )
           if (!newPrimitive) {
             console.warn(`[CoverageLayer] ${asset.label}: no isosurface generated`)
           }
@@ -205,7 +273,7 @@ export function CoverageLayer() {
     return () => {
       cancelled = true
     }
-  }, [viewer, assets, aoi, visibleIds, typesVisible])
+  }, [viewer, assets, aoi, visibleIds, typesVisible, coverageGrids])
 
   // Cleanup on unmount: cancel pending requests + drop primitives.
   useEffect(() => {
@@ -244,6 +312,11 @@ function aoiTerrainHeight(viewer: CesiumViewer, bbox: number[]): number {
 // Build one GeometryInstance for a single isosurface shell at `threshold`.
 // Returns null if the field has no boundary at this threshold (entire grid
 // above or below).
+//
+// When `maxJammer` + `toleranceDb` are supplied, the potential becomes the
+// MIN of (signal - threshold) and ((signal - jammer) - tolerance), so the
+// rendered surface is the boundary of "covered AND not jammed" — the
+// effective coverage volume after a co-channel jammer's interference.
 function buildShellInstance(
   asset: Asset,
   grid: CoverageGrid,
@@ -251,13 +324,23 @@ function buildShellInstance(
   threshold: number,
   alpha: number,
   contourIdx: number,
+  maxJammer: Float32Array | null = null,
+  toleranceDb: number | null = null,
 ): GeometryInstance | null {
   const { values, nx, ny, nz } = grid
+  const useJamMask = maxJammer != null && toleranceDb != null
   const potential = (x: number, y: number, z: number): number => {
     const i = Math.max(0, Math.min(nx - 1, Math.round(x)))
     const j = Math.max(0, Math.min(ny - 1, Math.round(y)))
     const k = Math.max(0, Math.min(nz - 1, Math.round(z)))
-    return values[i * ny * nz + j * nz + k] - threshold
+    const idx = i * ny * nz + j * nz + k
+    const sig = values[idx]
+    const p1 = sig - threshold
+    if (!useJamMask) return p1
+    const jam = maxJammer![idx]
+    if (jam === -Infinity) return p1
+    const p2 = sig - jam - (toleranceDb as number)
+    return Math.min(p1, p2)
   }
 
   const mesh = isosurface.surfaceNets(
@@ -335,14 +418,66 @@ function buildShellInstance(
   })
 }
 
-function buildCoveragePrimitive(asset: Asset, grid: CoverageGrid, groundOffsetM: number): Primitive | null {
+function buildCoveragePrimitive(
+  asset: Asset,
+  grid: CoverageGrid,
+  groundOffsetM: number,
+  allAssets: Asset[],
+  coverageGrids: Record<string, CoverageGrid>,
+): Primitive | null {
   const baseThreshold = COVERAGE_THRESHOLD_DBM[asset.type]
+  const tolerance = effectiveToleranceDb(asset.type)
+  const maxJammer =
+    tolerance != null ? buildMaxJammerField(asset, grid, allAssets, coverageGrids) : null
 
-  // Build nested contours (fringe → strong → core). Each shell is a separate
-  // GeometryInstance batched into a single Primitive — gives the operator a
-  // 3D-topographic-line look so they can read signal *strength bands*, not
-  // just an on/off boundary.
   const instances: GeometryInstance[] = []
+
+  if (maxJammer && tolerance != null) {
+    // Non-jammer with at least one co-channel jammer cached → switch to the
+    // 2-shell "ghost + effective" layout. Faded outer shell shows the volume
+    // that would be covered without jamming; vivid inner shell shows what
+    // actually survives the jammer's interference. The visible gap between
+    // them is what was lost.
+    const ghost = buildShellInstance(
+      asset,
+      grid,
+      groundOffsetM,
+      baseThreshold,
+      COVERAGE_NOMINAL_GHOST_ALPHA,
+      0,
+    )
+    if (ghost) instances.push(ghost)
+    const effective = buildShellInstance(
+      asset,
+      grid,
+      groundOffsetM,
+      baseThreshold,
+      COVERAGE_EFFECTIVE_ALPHA,
+      1,
+      maxJammer,
+      tolerance,
+    )
+    if (effective) instances.push(effective)
+    if (instances.length === 0) return null
+    console.log(
+      `[CoverageLayer] ${asset.label}: 2-shell render (ghost + effective under jamming)`,
+    )
+    return new Primitive({
+      geometryInstances: instances,
+      appearance: new PerInstanceColorAppearance({
+        flat: false,
+        translucent: true,
+        closed: false,
+      }),
+      asynchronous: false,
+      releaseGeometryInstances: true,
+      allowPicking: false,
+    })
+  }
+
+  // Default: 3-shell nested contour rendering for jammers and for non-jammers
+  // with no co-channel jamming in play. Gives the operator a topographic-style
+  // strength gradient (fringe → strong → core).
   for (let i = 0; i < COVERAGE_CONTOUR_OFFSETS_DB.length; i += 1) {
     const offset = COVERAGE_CONTOUR_OFFSETS_DB[i]
     const alpha = COVERAGE_CONTOUR_ALPHA[i]
