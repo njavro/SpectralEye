@@ -24,69 +24,77 @@ const TYPE_COLOR: Record<AssetType, string> = {
   relay: '#f6d23f', // yellow
 }
 
-// v0.1 default: distinct cylindrical silhouettes per asset type, plus a label.
-// One Entity per asset; the cylinder graphic is positioned with its CENTER at the
-// asset position raised by visualHeight/2 so the BASE sits at the asset's stored
-// (lat, lon, height). Geometry parameters chosen to give each type a recognizable
-// silhouette from any angle.
+// glTF model URI per asset type. Files live in frontend/public/models so
+// Vite serves them at /models/<file>.glb. Replaced the previous primitive
+// cylinders for v0.1 — same Entity structure (one per asset) but now backed
+// by a 3D mesh.
+const MODEL_URI: Record<AssetType, string> = {
+  jammer: '/models/jammer.glb',
+  sensor: '/models/sensor.glb',
+  relay: '/models/relay-tower.glb',
+}
+
+// World-space scale per type. The GLB files are at unit scale; these
+// multipliers blow them up to roughly the correct meter-scale silhouette
+// for the asset class. Tweakable as the operator finds them too big/small.
+const MODEL_SCALE: Record<AssetType, number> = {
+  jammer: 2.5,
+  sensor: 2.0,
+  relay: 1.0,
+  // ^ relay tower is naturally tall in its source mesh; sensor and jammer
+  //   are smaller objects so we scale them up for legibility from cruise
+  //   camera distance.
+}
+
+// Minimum on-screen pixel size — keeps the model legible even when the
+// camera pulls far back. Higher number = stays bigger longer.
+const MODEL_MIN_PIXEL_SIZE: Record<AssetType, number> = {
+  jammer: 64,
+  sensor: 56,
+  relay: 80,
+}
+
+// Approximate visual height in meters — used for camera-fit and label
+// offset calculations elsewhere. Estimates; refine if needed once we
+// know the meshes' actual extents.
+const MODEL_VISUAL_HEIGHT: Record<AssetType, number> = {
+  jammer: 6,
+  sensor: 4,
+  relay: 35,
+}
+
+function modelVisual(type: AssetType): AssetVisual {
+  return {
+    visualHeight: MODEL_VISUAL_HEIGHT[type],
+    build: (asset, { selected }) => ({
+      id: asset.id,
+      // Model origin sits AT the asset's stored position (which is the base
+      // contact point in our convention). If a particular GLB is authored
+      // with its origin at the centre or top, we'll see it floating / sunk
+      // and can tweak per-type.
+      position: Cartesian3.fromDegrees(asset.longitude, asset.latitude, asset.height),
+      model: {
+        uri: MODEL_URI[type],
+        scale: MODEL_SCALE[type],
+        minimumPixelSize: MODEL_MIN_PIXEL_SIZE[type],
+        maximumScale: 200,
+        // Selected → bright white outline. Unselected → faint type-coloured
+        // outline so the asset's role is still readable at distance.
+        silhouetteColor: selected
+          ? Color.WHITE
+          : Color.fromCssColorString(TYPE_COLOR[type]).brighten(0.4, new Color()),
+        silhouetteSize: selected ? 3 : 1,
+        runAnimations: false,
+      },
+      label: labelGraphics(asset.label, selected),
+    }),
+  }
+}
+
 export const primitiveVisuals: Record<AssetType, AssetVisual> = {
-  jammer: {
-    visualHeight: 25,
-    build: (asset, { selected }) => ({
-      id: asset.id,
-      position: Cartesian3.fromDegrees(asset.longitude, asset.latitude, asset.height + 25 / 2),
-      cylinder: {
-        length: 25,
-        topRadius: 5,
-        bottomRadius: 1.2,
-        material: Color.fromCssColorString(TYPE_COLOR.jammer).withAlpha(0.92),
-        outline: true,
-        outlineColor: selected
-          ? Color.WHITE
-          : Color.fromCssColorString(TYPE_COLOR.jammer).brighten(0.5, new Color()),
-        outlineWidth: selected ? 3 : 1,
-      },
-      label: labelGraphics(asset.label, selected),
-    }),
-  },
-  sensor: {
-    visualHeight: 8,
-    build: (asset, { selected }) => ({
-      id: asset.id,
-      position: Cartesian3.fromDegrees(asset.longitude, asset.latitude, asset.height + 8 / 2),
-      cylinder: {
-        length: 8,
-        topRadius: 7,
-        bottomRadius: 0.5,
-        material: Color.fromCssColorString(TYPE_COLOR.sensor).withAlpha(0.92),
-        outline: true,
-        outlineColor: selected
-          ? Color.WHITE
-          : Color.fromCssColorString(TYPE_COLOR.sensor).brighten(0.5, new Color()),
-        outlineWidth: selected ? 3 : 1,
-      },
-      label: labelGraphics(asset.label, selected),
-    }),
-  },
-  relay: {
-    visualHeight: 35,
-    build: (asset, { selected }) => ({
-      id: asset.id,
-      position: Cartesian3.fromDegrees(asset.longitude, asset.latitude, asset.height + 35 / 2),
-      cylinder: {
-        length: 35,
-        topRadius: 0.6,
-        bottomRadius: 0.6,
-        material: Color.fromCssColorString(TYPE_COLOR.relay).withAlpha(0.92),
-        outline: true,
-        outlineColor: selected
-          ? Color.WHITE
-          : Color.fromCssColorString(TYPE_COLOR.relay).brighten(0.5, new Color()),
-        outlineWidth: selected ? 3 : 1,
-      },
-      label: labelGraphics(asset.label, selected),
-    }),
-  },
+  jammer: modelVisual('jammer'),
+  sensor: modelVisual('sensor'),
+  relay: modelVisual('relay'),
 }
 
 function labelGraphics(text: string, selected: boolean) {

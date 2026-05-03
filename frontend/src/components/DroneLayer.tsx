@@ -4,6 +4,7 @@ import {
   CallbackProperty,
   Cartesian3,
   Color,
+  ColorBlendMode,
   Entity,
   HorizontalOrigin,
   LabelStyle,
@@ -13,6 +14,13 @@ import {
 import { useStore } from '../store'
 import { DRONE_COLOR, TRAJECTORY_COLOR } from './threatVisuals'
 import type { Drone, DroneRuntime } from '../types'
+
+const DRONE_MODEL_URI = '/models/fpv_drone.glb'
+// FPV-class drones are ~30 cm in real life; the source mesh is unit-scale.
+// Scale it up so the model reads as a drone-sized object from cruise camera
+// distance instead of a speck. Tweak if the operator finds it too big/small.
+const DRONE_MODEL_SCALE = 8
+const DRONE_MODEL_MIN_PIXEL_SIZE = 48
 
 const ID_PREFIX = 'drone'
 
@@ -27,6 +35,16 @@ function colorForStatus(rt: DroneRuntime | undefined, isSelected: boolean): Colo
   if (rt.intrudedOoi) return Color.fromCssColorString(DRONE_COLOR.intrusion)
   if (rt.status === 'jammed') return Color.fromCssColorString(DRONE_COLOR.jammed)
   return Color.fromCssColorString(DRONE_COLOR.clear).withAlpha(isSelected ? 1.0 : 0.95)
+}
+
+// How strongly to blend the status colour over the GLB model. 0 = pure
+// model textures; 1 = pure tint colour. Healthy state stays close to the
+// model's natural look; jammed/intrusion lean hard into the warning colour.
+function modelTintAmount(rt: DroneRuntime | undefined): number {
+  if (!rt) return 0
+  if (rt.intrudedOoi) return 0.7
+  if (rt.status === 'jammed') return 0.55
+  return 0
 }
 
 // Compose the in-scene drone label so the operator can read jamming state
@@ -100,8 +118,7 @@ export function DroneLayer() {
       // The CallbackProperty below pulls from this ref every frame.
       dronePosRef.current.set(drone.id, markerCart)
 
-      // ---- Marker (cylinder) at the drone's current runtime position ----
-      const markerColor = colorForStatus(rt, isSelected)
+      // ---- Drone glTF model at the runtime position ----
       const markerId = `${ID_PREFIX}-${drone.id}-marker`
       let marker = viewer.entities.getById(markerId)
       if (!marker) {
@@ -123,17 +140,30 @@ export function DroneLayer() {
           () => labelFillFor(useStore.getState().droneRuntime[droneId]),
           false,
         )
+        // Tint the model by status: jammed → orange wash; intrusion → red
+        // wash; healthy → no tint (natural model textures).
+        const modelTintProperty = new CallbackProperty(
+          () => colorForStatus(useStore.getState().droneRuntime[droneId], isSelected),
+          false,
+        )
+        const modelBlendProperty = new CallbackProperty(
+          () => modelTintAmount(useStore.getState().droneRuntime[droneId]),
+          false,
+        )
         marker = new Entity({
           id: markerId,
           position: positionProperty,
-          cylinder: {
-            length: 8,
-            topRadius: 3,
-            bottomRadius: 3,
-            material: markerColor,
-            outline: true,
-            outlineColor: Color.WHITE,
-            outlineWidth: isSelected ? 3 : 1,
+          model: {
+            uri: DRONE_MODEL_URI,
+            scale: DRONE_MODEL_SCALE,
+            minimumPixelSize: DRONE_MODEL_MIN_PIXEL_SIZE,
+            maximumScale: 200,
+            color: modelTintProperty,
+            colorBlendMode: ColorBlendMode.MIX,
+            colorBlendAmount: modelBlendProperty,
+            silhouetteColor: isSelected ? Color.WHITE : Color.fromCssColorString(DRONE_COLOR.clear),
+            silhouetteSize: isSelected ? 3 : 1,
+            runAnimations: true,
           },
           label: {
             text: labelTextProperty,
@@ -149,14 +179,9 @@ export function DroneLayer() {
           },
         })
         viewer.entities.add(marker)
-      } else if (marker.cylinder) {
-        // Position + label auto-update via CallbackProperty. Only the
-        // cylinder material needs a per-render write (it tracks the same
-        // status info via colorForStatus, but Cesium doesn't accept a
-        // CallbackProperty for cylinder.material in older versions).
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(marker.cylinder as any).material = markerColor
       }
+      // No imperative per-render writes needed — position, label text, label
+      // colour, model tint and tint amount all update via CallbackProperty.
 
       // ---- Planned path polyline (start → waypoints) ----
       const pathId = `${ID_PREFIX}-${drone.id}-path`
