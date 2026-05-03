@@ -196,6 +196,33 @@ def _write_ply(path, vertices, faces):
             f.write(f"3 {tri[0]} {tri[1]} {tri[2]}\\n")
 
 
+# Cache the per-AOI building footprints+heights so compute_coverage_grid can
+# look up the building under the TX and place the transmitter ABOVE its
+# rooftop in the local Sionna frame (without this, a TX placed on a tower
+# from Cesium ends up buried inside the same building in the Sionna scene).
+_BUILDING_CACHE = {}
+
+
+def _point_in_polygon(x, y, poly):
+    n = len(poly)
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = poly[i]; xj, yj = poly[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def building_height_at(x, y, polygons):
+    """Returns the height of the building at local (x, y), or 0 if no building."""
+    for h, poly in polygons:
+        if _point_in_polygon(x, y, poly):
+            return h
+    return 0.0
+
+
 def build_scene(bbox):
     """bbox: dict with west/south/east/north in degrees. Returns (scene_path, center)."""
     south, west, north, east = bbox["south"], bbox["west"], bbox["north"], bbox["east"]
@@ -203,14 +230,18 @@ def build_scene(bbox):
     center_lon = (west + east) / 2
     to_local = _to_local_frame(center_lon, center_lat)
 
-    # Buildings via Overpass — direct HTTP (overpy returned 406 from Colab IPs).
+    # Use body + recursive nodes — the public Overpass server returned 406
+    # to overpy's stricter Accept headers from Colab IPs, and `out geom;`
+    # produced inconsistent inline geometry for some ways. body + ;>; gets
+    # ways AND their referenced nodes separately, more robust.
     query = f"""
     [out:json][timeout:30];
     (
       way["building"]({south},{west},{north},{east});
-      relation["building"]({south},{west},{north},{east});
     );
-    out geom;
+    out body;
+    >;
+    out skel qt;
     """
     print(f"Querying OSM for buildings in {bbox}...")
     r = requests.post(
@@ -222,29 +253,30 @@ def build_scene(bbox):
     if r.status_code != 200:
         raise RuntimeError(f"Overpass {r.status_code}: {r.text[:300]}")
     elements = r.json().get("elements", [])
-    print(f"OSM returned {len(elements)} elements")
+
+    nodes = {e["id"]: (e["lon"], e["lat"]) for e in elements if e.get("type") == "node"}
+    ways = [e for e in elements if e.get("type") == "way" and "building" in (e.get("tags") or {})]
+    print(f"OSM returned {len(elements)} elements, {len(nodes)} nodes, {len(ways)} buildings")
 
     vertices = []
     faces = []
-    for elem in elements:
-        if elem.get("type") != "way":
+    building_polygons = []  # (height, [(x_local, y_local), ...]) for TX height lookup
+    for way in ways:
+        height = _building_height(way.get("tags", {}))
+        node_ids = way.get("nodes", [])
+        if len(node_ids) < 4:
             continue
-        tags = elem.get("tags", {})
-        if "building" not in tags:
-            continue
-        height = _building_height(tags)
-        geom = elem.get("geometry") or []
-        coords = [to_local(g["lon"], g["lat"]) for g in geom]
-        if len(coords) < 4:
+        try:
+            coords = [to_local(*nodes[n]) for n in node_ids]
+        except KeyError:
             continue
         if coords[0] == coords[-1]:
             coords = coords[:-1]
         if len(coords) < 3:
             continue
 
-        # Triangulate the footprint polygon (top + bottom caps).
-        # mapbox_earcut needs a 2D (N, 2) array of vertices — flat 1D silently
-        # returns empty, which would skip every building.
+        # mapbox_earcut needs a 2D (N, 2) array of vertices — passing a flat
+        # 1D array silently returns empty, which would skip every building.
         verts_2d = np.array(coords, dtype=np.float64)
         rings = np.array([len(coords)], dtype=np.uint32)
         try:
@@ -255,49 +287,39 @@ def build_scene(bbox):
             continue
         cap_tris = tris_flat.reshape(-1, 3)
 
-        n = len(coords)
-        v0 = len(vertices)
-        # Bottom ring at z=0
+        building_polygons.append((height, list(coords)))
+
+        n = len(coords); v0 = len(vertices)
         for x, y in coords:
             vertices.append((x, y, 0.0))
-        # Top ring at z=height
         for x, y in coords:
             vertices.append((x, y, height))
-
-        # Bottom cap (winding reversed so normal faces -Z)
         for tri in cap_tris:
             faces.append((v0 + int(tri[0]), v0 + int(tri[2]), v0 + int(tri[1])))
-        # Top cap
         for tri in cap_tris:
             faces.append((v0 + n + int(tri[0]), v0 + n + int(tri[1]), v0 + n + int(tri[2])))
-        # Walls — each footprint edge becomes 2 triangles (full closed volume).
         for i in range(n):
-            a = v0 + i
-            b = v0 + (i + 1) % n
-            c = v0 + n + (i + 1) % n
-            d = v0 + n + i
-            faces.append((a, b, c))
-            faces.append((a, c, d))
+            a = v0 + i; b = v0 + (i + 1) % n
+            c = v0 + n + (i + 1) % n; d = v0 + n + i
+            faces.append((a, b, c)); faces.append((a, c, d))
 
-    print(f"Built {len(vertices)} vertices, {len(faces)} triangles for buildings")
+    print(f"Built {len(vertices)} vertices, {len(faces)} triangles for {len(building_polygons)} buildings")
 
-    buildings_ply = os.path.join(SCENE_DIR, "buildings.ply")
-    _write_ply(buildings_ply, vertices, faces)
+    _write_ply(os.path.join(SCENE_DIR, "buildings.ply"), vertices, faces)
 
     # Ground plane: 2x AOI extent (so transmitters at the edge still hit ground).
     half_w = (east - west) * 111_320 * math.cos(math.radians(center_lat))
     half_h = (north - south) * 111_320
     g_verts = [
-        (-half_w, -half_h, 0.0),
-        (half_w, -half_h, 0.0),
-        (half_w, half_h, 0.0),
-        (-half_w, half_h, 0.0),
+        (-half_w, -half_h, 0.0), (half_w, -half_h, 0.0),
+        (half_w, half_h, 0.0), (-half_w, half_h, 0.0),
     ]
     g_faces = [(0, 1, 2), (0, 2, 3)]
-    ground_ply = os.path.join(SCENE_DIR, "ground.ply")
-    _write_ply(ground_ply, g_verts, g_faces)
+    _write_ply(os.path.join(SCENE_DIR, "ground.ply"), g_verts, g_faces)
 
-    # Mitsuba scene XML — IDs map to Sionna's ITU radio materials.
+    # face_normals=true tells Mitsuba to compute flat normals from triangle
+    # geometry — required because our PLY writer doesn't include vertex
+    # normals and Mitsuba 3 refuses to add them post-load.
     xml = """<?xml version="1.0" encoding="utf-8"?>
 <scene version="2.1.0">
   <bsdf type="diffuse" id="itu_concrete">
@@ -305,10 +327,12 @@ def build_scene(bbox):
   </bsdf>
   <shape type="ply" id="ground">
     <string name="filename" value="ground.ply"/>
+    <boolean name="face_normals" value="true"/>
     <ref id="itu_concrete"/>
   </shape>
   <shape type="ply" id="buildings">
     <string name="filename" value="buildings.ply"/>
+    <boolean name="face_normals" value="true"/>
     <ref id="itu_concrete"/>
   </shape>
 </scene>
@@ -316,6 +340,9 @@ def build_scene(bbox):
     scene_path = os.path.join(SCENE_DIR, "scene.xml")
     with open(scene_path, "w") as f:
         f.write(xml)
+
+    cache_key = (round(west, 5), round(south, 5), round(east, 5), round(north, 5))
+    _BUILDING_CACHE[cache_key] = building_polygons
     return scene_path, (center_lon, center_lat)
 
 
@@ -324,14 +351,15 @@ print("Scene builder ready.")
 
 RUNNER_MD = """## Step 4 — Sionna RT runner
 
-Loads the Mitsuba scene, places the asset transmitter, computes a 2D
-coverage map at one representative altitude (drone-mid: 50 m AGL), and
-fills the 3D voxel grid with that 2D slice replicated across heights.
+Loads the Mitsuba scene, places the asset transmitter, then runs Sionna's
+`RadioMapSolver` once per Z slice (multi-altitude sweep) and stacks the 2D
+coverage maps into a true 3D path-loss field. Coverage volumes correctly
+bulge around buildings at each altitude — the visible "shadow tunnel"
+behind a tall building only opens up above the rooftop, not below it.
 
-This is the simplest workable Sionna integration; it gets the wire protocol
-working end-to-end. To make the volume actually 3D-correct, replace
-`compute_coverage_grid` with a multi-height sweep that calls `coverage_map`
-at several Z values and stacks the results. Left as a TODO for v0.2.
+The TX is auto-placed above any building it sits on top of (using the OSM
+height cache from Step 3) so a jammer dropped on a tower doesn't end up
+buried inside its own walls in the local Sionna frame.
 """
 
 RUNNER_CODE = '''import mitsuba as mi
@@ -362,7 +390,19 @@ def compute_coverage_grid(asset, grid_spec, scene_path, scene_center):
 
     tx_x = (asset["longitude"] - center_lon) / deg_per_m_lon
     tx_y = (asset["latitude"] - center_lat) / deg_per_m_lat
-    tx_z = float(asset["height"])
+
+    # The asset height from the frontend is a WGS84 ellipsoidal height; the
+    # Sionna scene origin is the local ground plane at z=0. Naively using
+    # asset["height"] buries the TX below ground (geoid offset is ~-32m in
+    # SF). Place the TX above the rooftop of the building it sits on, or
+    # at 5 m AGL otherwise (low-mounted ground asset).
+    cache_key = (round(bbox["west"], 5), round(bbox["south"], 5),
+                 round(bbox["east"], 5), round(bbox["north"], 5))
+    polygons = _BUILDING_CACHE.get(cache_key, [])
+    bh = building_height_at(tx_x, tx_y, polygons)
+    tx_z = bh + 2.0 if bh > 0 else 5.0
+    print(f"  TX placed at local ({tx_x:.1f}, {tx_y:.1f}, {tx_z:.1f}) "
+          f"[building height: {bh:.1f}m]")
 
     scene = load_scene(scene_path)
     scene.frequency = float(asset["frequency_mhz"]) * 1e6
@@ -387,18 +427,36 @@ def compute_coverage_grid(asset, grid_spec, scene_path, scene_center):
     erp_linear = 10 ** ((erp_dbm - 30) / 10)
     eps = 1e-30
 
+    # Solver kwargs tuned for the multi-altitude sweep:
+    #  - samples_per_tx=2e6: high enough that thin/distant cells don't drop
+    #    to -inf gain (which would clamp to the noise floor and lose contrast)
+    #  - refraction=False: through-wall propagation is irrelevant for
+    #    outdoor EW assets and roughly doubles solver time when enabled
+    #  - diffuse_reflection=True: keeps soft shadow falloff behind buildings
+    # Some Sionna 1.x builds reject one or both kwargs; fall back gracefully.
+    base_kwargs = dict(
+        scene=scene,
+        max_depth=3,
+        cell_size=(voxel, voxel),
+        size=mi.Point2f(width_m, height_m),
+        samples_per_tx=int(2e6),
+    )
+
     rx_dbm_3d = np.empty((nx, ny, nz), dtype=np.float32)
     for k in range(nz):
         z = grid_spec["height_min_m"] + (k + 0.5) * voxel
-        rm = rm_solver(
-            scene=scene,
-            max_depth=3,
-            cell_size=(voxel, voxel),
+        slice_kwargs = dict(
+            base_kwargs,
             center=mi.Point3f(0.0, 0.0, z),
             orientation=mi.Point3f(0.0, 0.0, 0.0),
-            size=mi.Point2f(width_m, height_m),
-            samples_per_tx=int(5e5),  # halved vs single-slice to bound total time
         )
+        try:
+            rm = rm_solver(**slice_kwargs, refraction=False, diffuse_reflection=True)
+        except TypeError:
+            try:
+                rm = rm_solver(**slice_kwargs, refraction=False)
+            except TypeError:
+                rm = rm_solver(**slice_kwargs)
         gain = rm.path_gain.numpy()[0]  # (ny, nx)
         rx_dbm_3d[:, :, k] = (
             10.0 * np.log10(np.maximum(gain * erp_linear, eps)) + 30.0
