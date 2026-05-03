@@ -86,10 +86,16 @@ export type ObjectOfInterest = {
 export const DEFAULT_DRONE_SPEED_MPS = 15 // ~50 km/h, typical hobby quadcopter
 export const DEFAULT_DRONE_FREQ_MHZ = 2400
 export const DEFAULT_SJR_THRESHOLD_DB = 10
-// How far above the picked surface a drone waypoint sits. 30 m is a reasonable
-// drone-cruise altitude over a city for visual clarity (above most cars,
-// streetlamps, but below typical building rooftops).
-export const DEFAULT_DRONE_AGL_M = 30
+// Cruise altitude — meters above ground level. Each waypoint is normalised
+// to this height above the local terrain, so a path crossing hilly territory
+// follows the contour at a constant offset rather than spiking up wherever
+// the operator happened to click on a rooftop.
+export const DEFAULT_DRONE_AGL_M = 50
+// Vertical buffer above any tile-rendered building under a waypoint. The
+// waypoint's final altitude is max(terrain + DEFAULT_DRONE_AGL_M,
+// building_top + DRONE_BUILDING_CLEARANCE_M) so the drone naturally pops up
+// over tall structures instead of flying through them.
+export const DRONE_BUILDING_CLEARANCE_M = 10
 
 export const DEFAULT_OOI_PERIMETER_M = 100
 

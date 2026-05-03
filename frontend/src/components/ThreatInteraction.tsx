@@ -9,7 +9,11 @@ import {
   type Viewer,
 } from 'cesium'
 import { useStore } from '../store'
-import { DEFAULT_DRONE_AGL_M, DEFAULT_OOI_PERIMETER_M } from '../types'
+import {
+  DEFAULT_DRONE_AGL_M,
+  DEFAULT_OOI_PERIMETER_M,
+  DRONE_BUILDING_CLEARANCE_M,
+} from '../types'
 import type { Bbox } from '../types'
 
 function pickSurface(viewer: Viewer, x: number, y: number) {
@@ -21,6 +25,27 @@ function pickSurface(viewer: Viewer, x: number, y: number) {
     latitude: CesiumMath.toDegrees(c.latitude),
     height: c.height,
   }
+}
+
+// Compute the drone's flight altitude at a (lon, lat). Always at least
+// DEFAULT_DRONE_AGL_M above terrain (so paths over hills follow the ground)
+// AND DRONE_BUILDING_CLEARANCE_M above any building/tileset surface there
+// (so a tall rooftop pushes the drone up rather than letting the trajectory
+// spear through it). Falls back gracefully if a tile isn't loaded yet.
+function computeDroneAltitude(viewer: Viewer, lon: number, lat: number): number {
+  const cart = Cartographic.fromDegrees(lon, lat)
+  // Globe height = terrain only (no tilesets). Synchronous, returns undefined
+  // if the tile isn't loaded.
+  const terrainH = viewer.scene.globe.getHeight(cart)
+  // sampleHeight = highest of terrain + 3D Tiles, also synchronous.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const surfaceH = (viewer.scene as any).sampleHeight
+    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (viewer.scene as any).sampleHeight(cart)
+    : undefined
+  const ground = Number.isFinite(terrainH) ? (terrainH as number) : (surfaceH ?? 0)
+  const top = Number.isFinite(surfaceH) ? (surfaceH as number) : ground
+  return Math.max(ground + DEFAULT_DRONE_AGL_M, top + DRONE_BUILDING_CLEARANCE_M)
 }
 
 function inBbox(lon: number, lat: number, bbox: Bbox): boolean {
@@ -71,11 +96,14 @@ export function ThreatInteraction() {
       }
 
       // drone-plan flow: first click creates the drone, subsequent clicks
-      // append waypoints.
+      // append waypoints. Altitude is computed from the actual terrain +
+      // building heights at the waypoint, NOT from whatever surface
+      // pickPosition happened to hit, so paths stay at a uniform AGL
+      // regardless of whether the operator clicked on terrain or a roof.
       const wp = {
         longitude: surf.longitude,
         latitude: surf.latitude,
-        height: surf.height + DEFAULT_DRONE_AGL_M,
+        height: computeDroneAltitude(viewer, surf.longitude, surf.latitude),
       }
       const planningId = store().dronePlanningId
       if (!planningId) {
