@@ -202,6 +202,14 @@ def _write_ply(path, vertices, faces):
 # from Cesium ends up buried inside the same building in the Sionna scene).
 _BUILDING_CACHE = {}
 
+# Cache the FULL built scene (Mitsuba XML path + local frame center) per AOI
+# bbox so multiple coverage requests for the same AOI don't each re-query
+# Overpass. Critical when the operator has multiple jammers / sensors / relays
+# and triggers all their coverage fetches at once — without this cache, the
+# second+ requests trip Overpass's per-IP rate limit (HTTP 429) and the user
+# silently loses coverage for all but the first asset.
+_SCENE_CACHE = {}
+
 
 def _point_in_polygon(x, y, poly):
     n = len(poly)
@@ -224,8 +232,19 @@ def building_height_at(x, y, polygons):
 
 
 def build_scene(bbox):
-    """bbox: dict with west/south/east/north in degrees. Returns (scene_path, center)."""
+    """bbox: dict with west/south/east/north in degrees. Returns (scene_path, center).
+
+    Cache hit on `_SCENE_CACHE[bbox]` returns immediately — no Overpass query,
+    no PLY rewrite, no Mitsuba XML rebuild. This is what lets a "Show
+    Contested Airspace" toggle (which fires a coverage request for every
+    jammer at once) survive Overpass's per-IP rate limit: only the first
+    request actually queries OSM."""
     south, west, north, east = bbox["south"], bbox["west"], bbox["north"], bbox["east"]
+    cache_key = (round(west, 5), round(south, 5), round(east, 5), round(north, 5))
+    if cache_key in _SCENE_CACHE:
+        print(f"Scene cache HIT for {cache_key} — skipping Overpass query")
+        return _SCENE_CACHE[cache_key]
+
     center_lat = (south + north) / 2
     center_lon = (west + east) / 2
     to_local = _to_local_frame(center_lon, center_lat)
@@ -341,9 +360,12 @@ def build_scene(bbox):
     with open(scene_path, "w") as f:
         f.write(xml)
 
-    cache_key = (round(west, 5), round(south, 5), round(east, 5), round(north, 5))
+    # cache_key already computed at the top of build_scene for the early-return
+    # check. Reuse the same value for both caches so they stay aligned.
     _BUILDING_CACHE[cache_key] = building_polygons
-    return scene_path, (center_lon, center_lat)
+    result = (scene_path, (center_lon, center_lat))
+    _SCENE_CACHE[cache_key] = result
+    return result
 
 
 print("Scene builder ready.")
