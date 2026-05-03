@@ -396,10 +396,21 @@ def compute_coverage_grid(asset, grid_spec, scene_path, scene_center):
     # asset["height"] buries the TX below ground (geoid offset is ~-32m in
     # SF). Place the TX above the rooftop of the building it sits on, or
     # at 5 m AGL otherwise (low-mounted ground asset).
-    cache_key = (round(bbox["west"], 5), round(bbox["south"], 5),
-                 round(bbox["east"], 5), round(bbox["north"], 5))
-    polygons = _BUILDING_CACHE.get(cache_key, [])
-    bh = building_height_at(tx_x, tx_y, polygons)
+    #
+    # The building cache + lookup helper live in the scene builder cell. If
+    # this runner cell is executed before that cell (or if the user has an
+    # older notebook layout without those symbols), fall back to a flat 5 m
+    # AGL placement instead of erroring out — coverage will be omnidirectional
+    # but the request still succeeds.
+    try:
+        cache_key = (round(bbox["west"], 5), round(bbox["south"], 5),
+                     round(bbox["east"], 5), round(bbox["north"], 5))
+        polygons = _BUILDING_CACHE.get(cache_key, [])
+        bh = building_height_at(tx_x, tx_y, polygons)
+    except NameError:
+        bh = 0.0
+        print("  WARN: _BUILDING_CACHE / building_height_at not defined — "
+              "re-run the scene builder cell for accurate TX placement")
     tx_z = bh + 2.0 if bh > 0 else 5.0
     print(f"  TX placed at local ({tx_x:.1f}, {tx_y:.1f}, {tx_z:.1f}) "
           f"[building height: {bh:.1f}m]")

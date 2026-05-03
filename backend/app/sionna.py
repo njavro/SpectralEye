@@ -183,15 +183,27 @@ class RemoteSionnaSource:
         self.timeout_s = timeout_s
 
     async def compute(self, req: CoverageRequest) -> CoverageGrid:
-        async with httpx.AsyncClient(timeout=self.timeout_s) as client:
-            r = await client.post(
-                f"{self.base_url}/coverage/sionna",
-                json=req.model_dump(mode="json"),
-            )
+        # Transport-level failures (dead tunnel, DNS resolution, timeout) raise
+        # bare httpx.* exceptions that bypass FastAPI's exception handlers and
+        # therefore *also* bypass CORSMiddleware — the browser then reports a
+        # CORS error instead of the real cause. Translate them into 502s so
+        # the response goes through the normal middleware stack and the UI
+        # can surface a useful error.
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_s) as client:
+                r = await client.post(
+                    f"{self.base_url}/coverage/sionna",
+                    json=req.model_dump(mode="json"),
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Remote Sionna server unreachable at {self.base_url}: {exc}",
+            ) from exc
         if r.status_code != 200:
             raise HTTPException(
                 status_code=502,
-                detail=f"Remote Sionna server returned {r.status_code}: {r.text[:200]}",
+                detail=f"Remote Sionna server returned {r.status_code}: {r.text[:4000]}",
             )
         return CoverageGrid(**r.json())
 
