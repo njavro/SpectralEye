@@ -6,6 +6,15 @@ import { ASSET_TYPE_COLOR } from './assetVisuals'
 
 const TYPES: AssetType[] = ['jammer', 'sensor', 'relay']
 
+// Per-type model URI + camera framing for the palette mini-preview. Camera
+// orbit values picked so each asset reads cleanly at 32px — the relay tower
+// is tall so we frame it from a higher angle to fit the silhouette in.
+const PALETTE_MODEL: Record<AssetType, { uri: string; orbit: string }> = {
+  jammer: { uri: '/models/jammer.glb', orbit: '35deg 70deg auto' },
+  sensor: { uri: '/models/sensor.glb', orbit: '35deg 70deg auto' },
+  relay: { uri: '/models/relay-tower.glb', orbit: '35deg 65deg auto' },
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -93,16 +102,28 @@ export function AssetPalette() {
           <div className="palette-buttons">
             {TYPES.map((t) => {
               const active = placeMode === t
+              const m = PALETTE_MODEL[t]
               return (
                 <button
                   key={t}
                   type="button"
                   className={`palette-button${active ? ' active' : ''}`}
                   onClick={() => setPlaceMode(active ? null : t)}
+                  style={{ borderLeft: `3px solid ${ASSET_TYPE_COLOR[t]}` }}
                 >
-                  <span
-                    className="palette-swatch"
-                    style={{ background: ASSET_TYPE_COLOR[t] }}
+                  <model-viewer
+                    src={m.uri}
+                    alt={ASSET_TYPE_LABELS[t]}
+                    camera-orbit={m.orbit}
+                    interaction-prompt="none"
+                    disable-zoom
+                    disable-pan
+                    disable-tap
+                    shadow-intensity="0"
+                    exposure="1.1"
+                    loading="eager"
+                    reveal="auto"
+                    className="palette-thumb"
                   />
                   <span className="palette-label">{ASSET_TYPE_LABELS[t]}</span>
                 </button>

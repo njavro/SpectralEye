@@ -350,6 +350,17 @@ body,
   flex-shrink: 0;
 }
 
+/* Live 3D preview thumbnail in palette buttons. The model-viewer custom
+   element handles its own canvas sizing — we just clamp the host element. */
+.palette-thumb {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #1a1f28 0%, #0f1218 100%);
+  border-radius: 4px;
+  --poster-color: transparent;
+}
+
 .palette-label {
   flex: 1;
 }

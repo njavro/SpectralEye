@@ -39,11 +39,11 @@ const MODEL_URI: Record<AssetType, string> = {
 // for the asset class. Tweakable as the operator finds them too big/small.
 const MODEL_SCALE: Record<AssetType, number> = {
   jammer: 2.5,
-  sensor: 2.0,
+  sensor: 0.5,
   relay: 1.0,
-  // ^ relay tower is naturally tall in its source mesh; sensor and jammer
-  //   are smaller objects so we scale them up for legibility from cruise
-  //   camera distance.
+  // ^ relay tower is naturally tall in its source mesh; jammer is mid-sized;
+  //   sensor mesh is large at unit scale so we shrink it down to match a
+  //   real RF sensor's footprint.
 }
 
 // Minimum on-screen pixel size — keeps the model legible even when the

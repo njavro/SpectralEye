@@ -80,8 +80,22 @@ export function SituationModelingPanel() {
             if (planning) finishDronePlanning()
             else setPlaceMode('drone-plan')
           }}
+          style={{ borderLeft: '3px solid #dc2626' }}
         >
-          <span className="palette-swatch" style={{ background: '#dc2626' }} />
+          <model-viewer
+            src="/models/fpv_drone.glb"
+            alt="FPV drone"
+            camera-orbit="35deg 70deg auto"
+            interaction-prompt="none"
+            disable-zoom
+            disable-pan
+            disable-tap
+            shadow-intensity="0"
+            exposure="1.1"
+            loading="eager"
+            reveal="auto"
+            className="palette-thumb"
+          />
           <span className="palette-label">
             {planning ? 'Finish Drone Plan' : 'Plan Drone Threat'}
           </span>
