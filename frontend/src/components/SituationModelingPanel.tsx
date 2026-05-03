@@ -19,6 +19,9 @@ export function SituationModelingPanel() {
   const pauseSimulation = useStore((s) => s.pauseSimulation)
   const resumeSimulation = useStore((s) => s.resumeSimulation)
   const resetSimulation = useStore((s) => s.resetSimulation)
+  const contestedAirspaceVisible = useStore((s) => s.contestedAirspaceVisible)
+  const toggleContestedAirspace = useStore((s) => s.toggleContestedAirspace)
+  const jammerCount = useStore((s) => s.assets.filter((a) => a.type === 'jammer').length)
 
   if (!open) return null
 
@@ -47,6 +50,26 @@ export function SituationModelingPanel() {
           ×
         </button>
       </header>
+
+      <div className="situation-section">
+        <div className="situation-section-label">Threat overlays</div>
+        <button
+          type="button"
+          className={`palette-button${contestedAirspaceVisible ? ' active' : ''}`}
+          onClick={toggleContestedAirspace}
+          disabled={jammerCount === 0}
+          title={
+            jammerCount === 0
+              ? 'Place a jammer (and Show EMS for it) to populate the contested volume'
+              : 'Magenta volumes mark where a jammer can defeat a drone control link'
+          }
+        >
+          <span className="palette-swatch" style={{ background: '#d946ef' }} />
+          <span className="palette-label">
+            {contestedAirspaceVisible ? 'Hide Contested Airspace' : 'Show Contested Airspace'}
+          </span>
+        </button>
+      </div>
 
       <div className="situation-section">
         <div className="situation-section-label">Hostile drones</div>

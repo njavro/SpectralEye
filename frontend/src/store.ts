@@ -132,6 +132,11 @@ type SpectralEyeState = {
   // its start position so DroneLayer can render uniformly.
   droneRuntime: Record<string, DroneRuntime>
 
+  // Toggle for the Contested Airspace overlay — magenta volumes showing
+  // where a jammer's signal exceeds the drone-jamming threshold. Off by
+  // default; renders only for jammers whose coverage grid is cached.
+  contestedAirspaceVisible: boolean
+
   setAoi: (aoi: AreaOfOperation | null) => void
   patchAoi: (patch: Partial<AreaOfOperation>) => void
   setDrawMode: (on: boolean) => void
@@ -186,6 +191,9 @@ type SpectralEyeState = {
   // tick so multiple drones don't each trigger their own React re-render.
   setDroneRuntimeMap: (m: Record<string, DroneRuntime>) => void
   setSimulationStatus: (s: SimulationStatus) => void
+
+  toggleContestedAirspace: () => void
+  setContestedAirspaceVisible: (on: boolean) => void
 }
 
 export const useStore = create<SpectralEyeState>((set, get) => ({
@@ -213,6 +221,7 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
   simulationStatus: 'idle',
   simulationTime: 0,
   droneRuntime: {},
+  contestedAirspaceVisible: false,
 
   setAoi: (aoi) => set({ aoi }),
   patchAoi: (patch) =>
@@ -405,4 +414,8 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
     }),
   setDroneRuntimeMap: (m) => set({ droneRuntime: m }),
   setSimulationStatus: (st) => set({ simulationStatus: st }),
+
+  toggleContestedAirspace: () =>
+    set((s) => ({ contestedAirspaceVisible: !s.contestedAirspaceVisible })),
+  setContestedAirspaceVisible: (on) => set({ contestedAirspaceVisible: on }),
 }))

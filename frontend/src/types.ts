@@ -100,6 +100,15 @@ export const DRONE_LINK_REFERENCE_DBM = -55
 // that minor mismatches in operator-tuned jammer setups still register.
 export const FREQUENCY_MATCH_TOLERANCE_MHZ = 80
 
+// "Contested airspace" threshold — voxels where a jammer's signal exceeds
+// this level can defeat a drone control link with the default SJR margin
+// (DRONE_LINK_REFERENCE_DBM - DEFAULT_SJR_THRESHOLD_DB = -55 - 10 = -65).
+// Used by ContestedAirspaceLayer to render the operationally-meaningful
+// "drone-jamming" volume — typically much smaller than the jammer's full
+// coverage shell since a drone needs much less signal to operate than a
+// jammer does to stomp it.
+export const JAMMER_CONTESTED_THRESHOLD_DBM = -65
+
 export type DroneStatus = 'flying' | 'finished' | 'jammed' | 'intrusion'
 
 // Per-drone live state during simulation. Maintained alongside drones[]; one

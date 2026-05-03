@@ -18,6 +18,7 @@ import type { AreaOfOperation, Bbox } from '../types'
 import { BboxPicker } from './BboxPicker'
 import { AssetLayer } from './AssetLayer'
 import { AssetInteraction } from './AssetInteraction'
+import { ContestedAirspaceLayer } from './ContestedAirspaceLayer'
 import { CoverageLayer } from './CoverageLayer'
 import { DeploymentImporter } from './DeploymentImporter'
 import { DroneLayer } from './DroneLayer'
@@ -293,6 +294,7 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
     <>
       <BboxPicker enabled={drawMode} onDrawn={onBboxDrawn} onCancel={onCancelDraw} />
       <CoverageLayer />
+      <ContestedAirspaceLayer />
       <OoILayer />
       <DroneLayer />
       <AssetLayer />
