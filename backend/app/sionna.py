@@ -24,10 +24,13 @@ from __future__ import annotations
 
 import base64
 import math
+import os
 from datetime import datetime, timezone
 from typing import Literal, Protocol
 
+import httpx
 import numpy as np
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from app.deployment import Bbox
@@ -165,10 +168,49 @@ class MockSionnaSource:
 
 
 # ---------------------------------------------------------------------------
-# Source binding — swap this for RemoteSionnaSource(...) in C3.
+# Remote Sionna implementation
 # ---------------------------------------------------------------------------
 
-_default_source: SionnaSource = MockSionnaSource()
+
+class RemoteSionnaSource:
+    """HTTP client to a Colab notebook running real Sionna RT.
+
+    Same request/response shape as MockSionnaSource. Selected automatically
+    when SIONNA_REMOTE_URL is set in the backend's environment."""
+
+    def __init__(self, base_url: str, timeout_s: float = 180.0):
+        self.base_url = base_url.rstrip("/")
+        self.timeout_s = timeout_s
+
+    async def compute(self, req: CoverageRequest) -> CoverageGrid:
+        async with httpx.AsyncClient(timeout=self.timeout_s) as client:
+            r = await client.post(
+                f"{self.base_url}/coverage/sionna",
+                json=req.model_dump(mode="json"),
+            )
+        if r.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Remote Sionna server returned {r.status_code}: {r.text[:200]}",
+            )
+        return CoverageGrid(**r.json())
+
+
+# ---------------------------------------------------------------------------
+# Source binding — picks remote if SIONNA_REMOTE_URL is set, else mock.
+# ---------------------------------------------------------------------------
+
+
+def _build_default_source() -> SionnaSource:
+    url = os.environ.get("SIONNA_REMOTE_URL", "").strip()
+    if url:
+        print(f"[Sionna] using RemoteSionnaSource at {url}")
+        return RemoteSionnaSource(url)
+    print("[Sionna] using MockSionnaSource (set SIONNA_REMOTE_URL to enable real Sionna)")
+    return MockSionnaSource()
+
+
+_default_source: SionnaSource = _build_default_source()
 
 
 def get_sionna_source() -> SionnaSource:

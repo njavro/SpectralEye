@@ -1,12 +1,17 @@
+from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import geocoding
-from app.deployment import Bbox, DeploymentReport, get_deployment_source
-from app.sionna import CoverageGrid, CoverageRequest, get_sionna_source
-from app.water import WaterPolygons, fetch_water_polygons
+# Load backend/.env (next to this package) before any module that reads env vars.
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+
+from app import geocoding  # noqa: E402
+from app.deployment import Bbox, DeploymentReport, get_deployment_source  # noqa: E402
+from app.sionna import CoverageGrid, CoverageRequest, get_sionna_source  # noqa: E402
+from app.water import WaterPolygons, fetch_water_polygons  # noqa: E402
 
 app = FastAPI(title="SpectralEye Backend", version="0.1.0")
 
