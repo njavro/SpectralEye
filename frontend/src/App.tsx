@@ -256,6 +256,7 @@ function App() {
           />
           {aoiInitializing && <InitializingOverlay />}
           <EmsLoadingOverlay />
+          <DeploymentLoadingOverlay />
         </main>
         <AssetDetailPanel />
         <DroneDetailPanel />
@@ -280,6 +281,22 @@ function EmsLoadingOverlay() {
             Ray-tracing RF propagation for {pending} asset
             {pending === 1 ? '' : 's'}…
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DeploymentLoadingOverlay() {
+  const message = useStore((s) => s.deploymentLoadingMessage)
+  if (!message) return null
+  return (
+    <div className="initializing-overlay">
+      <div className="initializing-card">
+        <div className="initializing-spinner" />
+        <div className="initializing-text">
+          <div className="initializing-title">Reporting Current Deployment</div>
+          <div className="initializing-subtitle">{message}</div>
         </div>
       </div>
     </div>

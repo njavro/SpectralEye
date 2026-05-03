@@ -92,6 +92,10 @@ type SpectralEyeState = {
   // True from the moment we kick off a deployment fetch until import completes —
   // drives the button's loading spinner.
   importingDeployment: boolean
+  // Phased status text shown during a "Report Current Deployment" sequence
+  // (link establishment → reports incoming → cross-reference). Drives the
+  // full-screen loading overlay; null when no fetch is in flight.
+  deploymentLoadingMessage: string | null
   // Asset IDs whose EMS (coverage) volume should be rendered. Empty by default —
   // operator opts in via "Show EMS" (all) or "Show EMS Footprint" (one).
   visibleCoverageIds: Set<string>
@@ -172,6 +176,7 @@ type SpectralEyeState = {
   clearAssets: () => void
   setPendingDeploymentReports: (r: AssetReport[] | null) => void
   setImportingDeployment: (on: boolean) => void
+  setDeploymentLoadingMessage: (msg: string | null) => void
 
   toggleCoverageVisibility: (assetId: string) => void
   showAllCoverage: () => void
@@ -220,6 +225,7 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
   dronePlanningId: null,
   pendingDeploymentReports: null,
   importingDeployment: false,
+  deploymentLoadingMessage: null,
   visibleCoverageIds: new Set(),
   coverageTypesVisible: { jammer: true, sensor: true, relay: true },
   pendingCoverageFetches: 0,
@@ -361,6 +367,7 @@ export const useStore = create<SpectralEyeState>((set, get) => ({
     }),
   setPendingDeploymentReports: (r) => set({ pendingDeploymentReports: r }),
   setImportingDeployment: (on) => set({ importingDeployment: on }),
+  setDeploymentLoadingMessage: (msg) => set({ deploymentLoadingMessage: msg }),
 
   toggleCoverageVisibility: (assetId) =>
     set((s) => {

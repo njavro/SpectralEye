@@ -6,6 +6,10 @@ import { ASSET_TYPE_COLOR } from './assetVisuals'
 
 const TYPES: AssetType[] = ['jammer', 'sensor', 'relay']
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export function AssetPalette() {
   const aoi = useStore((s) => s.aoi)
   const placeMode = useStore((s) => s.placeMode)
@@ -24,16 +28,33 @@ export function AssetPalette() {
   const enabled = aoi !== null && !aoiInitializing
   const allVisible = assetCount > 0 && visibleCoverageCount === assetCount
 
+  const setDeploymentLoadingMessage = useStore((s) => s.setDeploymentLoadingMessage)
+
   const handleReportDeployment = async () => {
     if (!aoi) return
     setImportingDeployment(true)
+    // Phased loading flow — the underlying API call is usually instant, but
+    // a deployment self-report rolling in over a tactical link reads better
+    // as a multi-stage operation. Each stage is held visible long enough to
+    // be legible (operator + audience can read the status), and the actual
+    // fetch is interleaved into the second stage.
     try {
-      const report = await fetchCurrentDeployment(aoi.bbox)
+      setDeploymentLoadingMessage('Establishing link to field stations…')
+      await sleep(900)
+      setDeploymentLoadingMessage('Receiving asset self-reports over tactical net…')
+      const fetchPromise = fetchCurrentDeployment(aoi.bbox)
+      // Hold the reports-stage for at least 1.4s even if the network is fast,
+      // so the operator actually reads the message instead of seeing a flash.
+      const [report] = await Promise.all([fetchPromise, sleep(1400)])
+      setDeploymentLoadingMessage('Cross-referencing positions with terrain & water masks…')
+      await sleep(900)
+      setDeploymentLoadingMessage(null)
       setPendingDeploymentReports(report.reports)
       // setImportingDeployment(false) is called by DeploymentImporter once heights
       // are sampled and assets added.
     } catch (err) {
       console.error('[AssetPalette] failed to fetch deployment', err)
+      setDeploymentLoadingMessage(null)
       setImportingDeployment(false)
     }
   }
