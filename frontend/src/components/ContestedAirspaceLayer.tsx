@@ -19,21 +19,34 @@ import {
 import isosurface from 'isosurface'
 import type { CoverageGrid } from '../api'
 import { useStore } from '../store'
-import { JAMMER_CONTESTED_THRESHOLD_DBM } from '../types'
+import {
+  JAMMER_CONTESTED_THRESHOLD_DBM,
+  JAMMER_DOMINANCE_THRESHOLD_DBM,
+} from '../types'
 
-// Renders the "drone-jamming" volume for every cached jammer coverage grid:
-// the isosurface where the jammer's signal exceeds JAMMER_CONTESTED_THRESHOLD_DBM
-// (-65 dBm). Inside this volume a default-tuned drone control link will fail.
+// Renders the "drone-jamming" volume for every cached jammer coverage grid as
+// two nested isosurface shells:
+//
+//   outer @ JAMMER_CONTESTED_THRESHOLD_DBM  — the actual jamming boundary;
+//     a default-tuned drone outside this shell stays clear of the link
+//     loss. Drawn at low alpha so it doesn't dominate the scene.
+//   inner @ JAMMER_DOMINANCE_THRESHOLD_DBM  — the "no-escape" core where
+//     the jammer dominates with margin. Higher alpha to visually anchor
+//     the jammer's true line-of-sight effective zone.
 //
 // Re-runs whenever a jammer is added/removed, its coverage grid arrives, or
 // the user toggles `contestedAirspaceVisible` in the Situation Modeling panel.
 // Builds a per-jammer Primitive that's flipped via .show on toggle so we don't
 // re-marching-cubes when hiding/showing.
 //
-// Color: bright magenta (#d946ef), translucent — distinct from jammer red,
+// Color: magenta (#d946ef), shell-specific alpha — distinct from jammer red,
 // sensor blue, relay yellow, OoI green.
 
-const CONTESTED_RGBA: [number, number, number, number] = [217, 70, 239, 75]
+// (R, G, B, A) for the outer ("drone gets jammed here") and inner ("jammer
+// dominates by ≥ 20 dB") shells. Outer must stay light enough that the inner
+// shows through it.
+const CONTESTED_OUTER_RGBA: [number, number, number, number] = [217, 70, 239, 35]
+const CONTESTED_INNER_RGBA: [number, number, number, number] = [217, 70, 239, 110]
 
 type Entry = {
   // Hash that decides whether the cached primitive is still valid.
@@ -134,10 +147,13 @@ export function ContestedAirspaceLayer() {
   return null
 }
 
-function buildContestedPrimitive(grid: CoverageGrid, groundOffsetM: number): Primitive | null {
+function buildShellInstance(
+  grid: CoverageGrid,
+  groundOffsetM: number,
+  threshold: number,
+  rgba: [number, number, number, number],
+): GeometryInstance | null {
   const { values, nx, ny, nz } = grid
-  const threshold = JAMMER_CONTESTED_THRESHOLD_DBM
-
   const potential = (x: number, y: number, z: number): number => {
     const i = Math.max(0, Math.min(nx - 1, Math.round(x)))
     const j = Math.max(0, Math.min(ny - 1, Math.round(y)))
@@ -211,15 +227,36 @@ function buildContestedPrimitive(grid: CoverageGrid, groundOffsetM: number): Pri
   })
   GeometryPipeline.computeNormal(geometry)
 
-  const [r, g, b, a] = CONTESTED_RGBA
-  const color = Color.fromBytes(r, g, b, a)
-  const instance = new GeometryInstance({
+  const [r, g, b, a] = rgba
+  return new GeometryInstance({
     geometry,
-    attributes: { color: ColorGeometryInstanceAttribute.fromColor(color) },
+    attributes: { color: ColorGeometryInstanceAttribute.fromColor(Color.fromBytes(r, g, b, a)) },
   })
+}
+
+function buildContestedPrimitive(grid: CoverageGrid, groundOffsetM: number): Primitive | null {
+  // Build outer first (matching simulation jamming boundary), then inner
+  // (dominance core). Either may be null if the field never crosses the
+  // threshold inside the grid; primitive is null only if BOTH are missing.
+  const instances: GeometryInstance[] = []
+  const outer = buildShellInstance(
+    grid,
+    groundOffsetM,
+    JAMMER_CONTESTED_THRESHOLD_DBM,
+    CONTESTED_OUTER_RGBA,
+  )
+  if (outer) instances.push(outer)
+  const inner = buildShellInstance(
+    grid,
+    groundOffsetM,
+    JAMMER_DOMINANCE_THRESHOLD_DBM,
+    CONTESTED_INNER_RGBA,
+  )
+  if (inner) instances.push(inner)
+  if (instances.length === 0) return null
 
   return new Primitive({
-    geometryInstances: [instance],
+    geometryInstances: instances,
     appearance: new PerInstanceColorAppearance({
       flat: false,
       translucent: true,

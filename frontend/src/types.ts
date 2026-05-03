@@ -103,17 +103,24 @@ export const DRONE_LINK_REFERENCE_DBM = -55
 // that minor mismatches in operator-tuned jammer setups still register.
 export const FREQUENCY_MATCH_TOLERANCE_MHZ = 80
 
-// "Contested airspace" threshold — voxels where a jammer's signal exceeds
-// this level mark the volume in which the jammer DOMINATES the drone control
-// link by ≥ DEFAULT_SJR_THRESHOLD_DB (10 dB). Equivalent to:
-//   DRONE_LINK_REFERENCE_DBM + DEFAULT_SJR_THRESHOLD_DB = -55 + 10 = -45
-// Tighter than the bare "drone could be jammed" boundary (~-65 dBm) because
-// the loose threshold makes a 1W+ jammer's contested volume swallow most
-// realistic AOIs and obscure the underlying terrain/building shadowing. The
-// -45 dBm threshold shows the jammer's true effective dominance zone — where
-// it reliably defeats the link with margin to spare — which is small enough
-// to reveal where the jammer actually has clean line-of-sight.
-export const JAMMER_CONTESTED_THRESHOLD_DBM = -45
+// Contested-airspace boundaries — DERIVED from the simulation's jamming
+// constants so the rendered volume can never drift out of sync with what
+// drones actually experience. Two nested shells give the operator a gradient
+// view without losing the operational ground-truth boundary:
+//
+//   outer = JAMMER_CONTESTED_THRESHOLD_DBM (-65 dBm at defaults)
+//     Where a default-tuned drone gets jammed — DRONE_LINK_REFERENCE_DBM
+//     minus the default SJR margin. A drone OUTSIDE the outer shell will
+//     not be jammed by this jammer; INSIDE, it will. This is the matching
+//     boundary, not a stylistic choice.
+//
+//   inner = JAMMER_DOMINANCE_THRESHOLD_DBM (-45 dBm at defaults)
+//     Where the jammer dominates by an additional 20 dB beyond the
+//     jamming threshold — the "no escape, no spectral nulls, no hopping
+//     buys you out of this" core. Visually emphasised with higher alpha.
+export const JAMMER_CONTESTED_THRESHOLD_DBM =
+  DRONE_LINK_REFERENCE_DBM - DEFAULT_SJR_THRESHOLD_DB
+export const JAMMER_DOMINANCE_THRESHOLD_DBM = JAMMER_CONTESTED_THRESHOLD_DBM + 20
 
 export type DroneStatus = 'flying' | 'finished' | 'jammed' | 'intrusion'
 
