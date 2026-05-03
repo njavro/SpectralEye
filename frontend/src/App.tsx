@@ -3,6 +3,7 @@ import './cesium-config'
 import { SceneViewer } from './components/SceneViewer'
 import { AssetPalette } from './components/AssetPalette'
 import { AssetDetailPanel } from './components/AssetDetailPanel'
+import { IntrusionAlertOverlay } from './components/IntrusionAlertOverlay'
 import { OoIDetailPanel } from './components/OoIDetailPanel'
 import { SituationModelingPanel } from './components/SituationModelingPanel'
 import { fetchWaterPolygons, reverseGeocode } from './api'
@@ -259,6 +260,7 @@ function App() {
         <OoIDetailPanel />
         <SituationModelingPanel />
       </div>
+      <IntrusionAlertOverlay />
     </div>
   )
 }
