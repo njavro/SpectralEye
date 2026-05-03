@@ -449,9 +449,21 @@ def coverage(req: _CoverageRequest):
     }
 
 
-config = uvicorn.Config(app, host="0.0.0.0", port=8765, log_level="info")
-server = uvicorn.Server(config)
-threading.Thread(target=server.run, daemon=True).start()
+import asyncio
+
+
+def _run_server():
+    # Drive the coroutine in our own event loop. Bypass uvicorn's Server.run()
+    # which calls asyncio.run with a loop_factory kwarg that nest_asyncio's
+    # patched asyncio.run doesn't accept.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    config = uvicorn.Config(app, host="0.0.0.0", port=8765, log_level="info", loop="asyncio")
+    server = uvicorn.Server(config)
+    loop.run_until_complete(server.serve())
+
+
+threading.Thread(target=_run_server, daemon=True).start()
 time.sleep(2)
 print("FastAPI server running on port 8765 inside notebook.")
 '''
