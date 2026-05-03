@@ -271,16 +271,18 @@ function App() {
 function EmsLoadingOverlay() {
   const pending = useStore((s) => s.pendingCoverageFetches)
   if (pending <= 0) return null
+  // Top-right toast inside the scene container — operator can keep panning,
+  // zooming, and inspecting the map while Sionna grids stream in. The full-
+  // screen overlay was correct for the deliberate Report-Current-Deployment
+  // flow but wrong for background coverage fetches that often kick off
+  // implicitly (e.g. when the contested-airspace toggle auto-loads grids).
   return (
-    <div className="initializing-overlay">
-      <div className="initializing-card">
-        <div className="initializing-spinner" />
-        <div className="initializing-text">
-          <div className="initializing-title">Generating Electromagnetic Environment</div>
-          <div className="initializing-subtitle">
-            Ray-tracing RF propagation for {pending} asset
-            {pending === 1 ? '' : 's'}…
-          </div>
+    <div className="ems-loading-toast" role="status" aria-live="polite">
+      <div className="ems-loading-spinner" />
+      <div className="ems-loading-text">
+        <div className="ems-loading-title">Ray-tracing RF</div>
+        <div className="ems-loading-subtitle">
+          {pending} request{pending === 1 ? '' : 's'} in flight
         </div>
       </div>
     </div>
