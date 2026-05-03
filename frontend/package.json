@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "cesium": "^1.141.0",
+    "isosurface": "^1.0.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "resium": "^1.21.0",

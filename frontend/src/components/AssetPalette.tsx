@@ -15,8 +15,12 @@ export function AssetPalette() {
   const importing = useStore((s) => s.importingDeployment)
   const setPendingDeploymentReports = useStore((s) => s.setPendingDeploymentReports)
   const setImportingDeployment = useStore((s) => s.setImportingDeployment)
+  const visibleCoverageCount = useStore((s) => s.visibleCoverageIds.size)
+  const showAllCoverage = useStore((s) => s.showAllCoverage)
+  const hideAllCoverage = useStore((s) => s.hideAllCoverage)
 
   const enabled = aoi !== null && !aoiInitializing
+  const allVisible = assetCount > 0 && visibleCoverageCount === assetCount
 
   const handleReportDeployment = async () => {
     if (!aoi) return
@@ -87,6 +91,29 @@ export function AssetPalette() {
               Click on the scene to drop the {ASSET_TYPE_LABELS[placeMode].toLowerCase()}.
               Press <kbd>Esc</kbd> to cancel.
             </div>
+          )}
+
+          {assetCount > 0 && (
+            <>
+              <div className="palette-section-label palette-section-label-spaced">
+                Electromagnetic spectrum
+              </div>
+              <button
+                type="button"
+                className="palette-ems-button"
+                onClick={() => (allVisible ? hideAllCoverage() : showAllCoverage())}
+              >
+                {allVisible ? 'Hide EMS' : 'Show EMS'}
+                {visibleCoverageCount > 0 && !allVisible && (
+                  <span className="palette-ems-count">
+                    {visibleCoverageCount}/{assetCount}
+                  </span>
+                )}
+              </button>
+              <div className="palette-report-note">
+                Toggle the predicted RF coverage volumes for all deployed assets.
+              </div>
+            </>
           )}
         </>
       )}

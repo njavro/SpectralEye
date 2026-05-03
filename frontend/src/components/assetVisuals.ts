@@ -111,3 +111,19 @@ export function visualFor(type: AssetType): AssetVisual {
 }
 
 export const ASSET_TYPE_COLOR = TYPE_COLOR
+
+// Coverage isosurface threshold (dBm) per asset type. Voxel values above
+// this define the volume rendered as the asset's coverage.
+export const COVERAGE_THRESHOLD_DBM: Record<AssetType, number> = {
+  jammer: -70, // jammer overpowers receiver at this rx power
+  sensor: -100, // sensor sensitivity to a reference 30-dBm emitter
+  relay: -90, // relay can reach this rx power
+}
+
+// Translucent fill color per asset type for the coverage volume.
+// Subtle alpha so multi-asset overlaps stay legible.
+export const COVERAGE_VOLUME_RGBA: Record<AssetType, string> = {
+  jammer: 'rgba(231, 76, 60, 0.14)',
+  sensor: 'rgba(63, 182, 246, 0.14)',
+  relay: 'rgba(246, 210, 63, 0.14)',
+}

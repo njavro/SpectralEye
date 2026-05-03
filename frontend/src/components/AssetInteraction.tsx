@@ -11,6 +11,7 @@ import {
 import { useStore } from '../store'
 import { defaultAssetParams } from '../types'
 import type { AssetType, Bbox } from '../types'
+import { isInWater, requiresLand } from './placementRules'
 
 const SURFACE_OFFSET_M = 1.5
 
@@ -65,6 +66,13 @@ export function AssetInteraction() {
         if (a && !inBbox(surf.longitude, surf.latitude, a.bbox)) {
           console.log('[AssetInteraction] click outside AOI — rejected')
           return
+        }
+        if (requiresLand(pm)) {
+          const water = useStore.getState().waterPolygons ?? []
+          if (isInWater(surf.longitude, surf.latitude, water)) {
+            console.log(`[AssetInteraction] ${pm} requires land — click was over water, rejected`)
+            return
+          }
         }
         store.addAsset({
           type: pm,

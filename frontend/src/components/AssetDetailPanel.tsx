@@ -9,6 +9,8 @@ export function AssetDetailPanel() {
   const updateAsset = useStore((s) => s.updateAsset)
   const removeAsset = useStore((s) => s.removeAsset)
   const selectAsset = useStore((s) => s.selectAsset)
+  const coverageVisible = useStore((s) => (selectedId ? s.visibleCoverageIds.has(selectedId) : false))
+  const toggleCoverageVisibility = useStore((s) => s.toggleCoverageVisibility)
 
   if (!asset) return null
 
@@ -120,6 +122,13 @@ export function AssetDetailPanel() {
       </div>
 
       <div className="detail-actions">
+        <button
+          type="button"
+          className="detail-ems-toggle"
+          onClick={() => toggleCoverageVisibility(asset.id)}
+        >
+          {coverageVisible ? 'Hide EMS Footprint' : 'Show EMS Footprint'}
+        </button>
         <button
           type="button"
           className="detail-delete"

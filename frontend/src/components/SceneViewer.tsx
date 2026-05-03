@@ -18,6 +18,7 @@ import type { AreaOfOperation, Bbox } from '../types'
 import { BboxPicker } from './BboxPicker'
 import { AssetLayer } from './AssetLayer'
 import { AssetInteraction } from './AssetInteraction'
+import { CoverageLayer } from './CoverageLayer'
 import { DeploymentImporter } from './DeploymentImporter'
 
 type Props = {
@@ -287,6 +288,7 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
   return (
     <>
       <BboxPicker enabled={drawMode} onDrawn={onBboxDrawn} onCancel={onCancelDraw} />
+      <CoverageLayer />
       <AssetLayer />
       <AssetInteraction />
       <DeploymentImporter />

@@ -3,10 +3,64 @@ import './cesium-config'
 import { SceneViewer } from './components/SceneViewer'
 import { AssetPalette } from './components/AssetPalette'
 import { AssetDetailPanel } from './components/AssetDetailPanel'
-import { reverseGeocode } from './api'
+import { fetchWaterPolygons, reverseGeocode } from './api'
 import { useStore } from './store'
+import { isInWater } from './components/placementRules'
 import type { Bbox } from './types'
 import './App.css'
+
+// Resolution of the AOI land-sample grid. 150×150 = 22,500 candidates; at a 5 km
+// AOI that's ~33 m per cell — fine enough to snap precisely.
+const LAND_GRID_RESOLUTION = 150
+// How many neighbor-cells thick a land cell's water-free buffer must be.
+// Combined with grid resolution this gives ~66 m of clearance from any water
+// edge — tolerates OSM-polygon-vs-satellite-imagery misalignment.
+const LAND_EROSION_CELLS = 2
+
+function computeLandSamples(
+  bbox: Bbox,
+  waterPolygons: Parameters<typeof isInWater>[2],
+  resolution = LAND_GRID_RESOLUTION,
+): Array<[number, number]> {
+  const [west, south, east, north] = bbox
+  const lonStep = (east - west) / resolution
+  const latStep = (north - south) / resolution
+
+  // Pass 1: classify every grid cell as land or water.
+  const isLand = new Uint8Array(resolution * resolution)
+  for (let i = 0; i < resolution; i += 1) {
+    const lon = west + (i + 0.5) * lonStep
+    for (let j = 0; j < resolution; j += 1) {
+      const lat = south + (j + 0.5) * latStep
+      isLand[i * resolution + j] = isInWater(lon, lat, waterPolygons) ? 0 : 1
+    }
+  }
+
+  // Pass 2: erode — only keep cells whose neighbors within `LAND_EROSION_CELLS`
+  // are also land. Drops boundary cells so we never snap to a position right
+  // next to (or slightly past) a coastline.
+  const e = LAND_EROSION_CELLS
+  const out: Array<[number, number]> = []
+  for (let i = e; i < resolution - e; i += 1) {
+    for (let j = e; j < resolution - e; j += 1) {
+      let allLand = true
+      for (let di = -e; di <= e && allLand; di += 1) {
+        for (let dj = -e; dj <= e; dj += 1) {
+          if (!isLand[(i + di) * resolution + (j + dj)]) {
+            allLand = false
+            break
+          }
+        }
+      }
+      if (allLand) {
+        const lon = west + (i + 0.5) * lonStep
+        const lat = south + (j + 0.5) * latStep
+        out.push([lon, lat])
+      }
+    }
+  }
+  return out
+}
 
 function bboxCenter(bbox: Bbox): { lat: number; lon: number } {
   return { lon: (bbox[0] + bbox[2]) / 2, lat: (bbox[1] + bbox[3]) / 2 }
@@ -35,6 +89,9 @@ function App() {
   const setDrawMode = useStore((s) => s.setDrawMode)
   const setAoiInitializing = useStore((s) => s.setAoiInitializing)
   const clearAssets = useStore((s) => s.clearAssets)
+  const setWaterPolygons = useStore((s) => s.setWaterPolygons)
+  const setLandSamples = useStore((s) => s.setLandSamples)
+  const waterPolygons = useStore((s) => s.waterPolygons)
 
   const handleBboxDrawn = useCallback(
     (bbox: Bbox) => {
@@ -80,6 +137,46 @@ function App() {
       .catch(() => {})
     return () => controller.abort()
   }, [aoi, patchAoi])
+
+  // Fetch OSM water polygons for the AOI so land-only assets can be rejected
+  // from water positions. Cleared on AOI reset.
+  useEffect(() => {
+    if (!aoi) {
+      setWaterPolygons(null)
+      setLandSamples(null)
+      return
+    }
+    const controller = new AbortController()
+    fetchWaterPolygons(aoi.bbox, controller.signal)
+      .then((res) => {
+        if (controller.signal.aborted) return
+        console.log(`[App] water polygons loaded: ${res.polygons.length}`)
+        setWaterPolygons(res.polygons)
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          console.warn('[App] water fetch failed — proceeding without water rejection', err)
+          setWaterPolygons([])
+        }
+      })
+    return () => controller.abort()
+  }, [aoi, setWaterPolygons, setLandSamples])
+
+  // Pre-compute the AOI's land sample grid. Heavy-ish (~10 ms for 80×80) but
+  // runs once per AOI, so subsequent placements snap to land in O(N) per asset.
+  useEffect(() => {
+    if (!aoi || !waterPolygons) {
+      setLandSamples(null)
+      return
+    }
+    const t0 = performance.now()
+    const samples = computeLandSamples(aoi.bbox, waterPolygons)
+    const dt = performance.now() - t0
+    console.log(
+      `[App] land samples computed: ${samples.length} of ${LAND_GRID_RESOLUTION ** 2} cells are land (${dt.toFixed(0)} ms)`,
+    )
+    setLandSamples(samples)
+  }, [aoi, waterPolygons, setLandSamples])
 
   const dim = aoi ? bboxDimensionsKm(aoi.bbox) : null
   const center = aoi ? bboxCenter(aoi.bbox) : null

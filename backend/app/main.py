@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import geocoding
 from app.deployment import Bbox, DeploymentReport, get_deployment_source
+from app.sionna import CoverageGrid, CoverageRequest, get_sionna_source
+from app.water import WaterPolygons, fetch_water_polygons
 
 app = FastAPI(title="SpectralEye Backend", version="0.1.0")
 
@@ -39,3 +41,22 @@ async def deployment_current(bbox: Bbox) -> DeploymentReport:
     real hardware aggregation is available."""
     source = get_deployment_source()
     return await source.fetch_current_deployment(bbox)
+
+
+@app.post("/water/in-bbox")
+async def water_in_bbox(bbox: Bbox) -> WaterPolygons:
+    """Returns OSM water polygons (oceans, rivers, lakes) intersecting the bbox.
+
+    Used by the frontend to reject land-only EW assets dropped on water and to
+    filter water-positioned reports out of self-reported deployments."""
+    return await fetch_water_polygons(bbox)
+
+
+@app.post("/coverage/sionna")
+async def coverage_sionna(req: CoverageRequest) -> CoverageGrid:
+    """Compute an asset's RF coverage as a 3D path-loss voxel grid.
+
+    Currently bound to MockSionnaSource — see backend/app/sionna.py for the
+    swap point that brings up real Sionna RT in Phase 4 C3."""
+    source = get_sionna_source()
+    return await source.compute(req)
