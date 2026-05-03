@@ -29,6 +29,34 @@ function colorForStatus(rt: DroneRuntime | undefined, isSelected: boolean): Colo
   return Color.fromCssColorString(DRONE_COLOR.clear).withAlpha(isSelected ? 1.0 : 0.95)
 }
 
+// Compose the in-scene drone label so the operator can read jamming state
+// straight off the map without consulting the panel — the SJR number IS the
+// truth, no need to trust any volume rendering.
+function formatDroneLabel(label: string, rt: DroneRuntime | undefined): string {
+  if (!rt) return label
+  const parts: string[] = [label]
+  if (rt.sjrDb != null) {
+    const sign = rt.sjrDb >= 0 ? '+' : ''
+    parts.push(`SJR ${sign}${rt.sjrDb.toFixed(1)} dB`)
+  }
+  if (rt.intrudedOoi) {
+    parts.push('INTRUSION')
+  } else if (rt.status === 'jammed') {
+    parts.push('JAMMED')
+  } else if (rt.status === 'finished') {
+    parts.push('target reached')
+  }
+  return parts.join(' · ')
+}
+
+function labelFillFor(rt: DroneRuntime | undefined): Color {
+  if (!rt) return Color.WHITE
+  if (rt.intrudedOoi) return Color.fromCssColorString('#fca5a5')
+  if (rt.status === 'jammed') return Color.fromCssColorString('#fdba74')
+  if (rt.status === 'finished') return Color.fromCssColorString('#a5b4fc')
+  return Color.WHITE
+}
+
 export function DroneLayer() {
   const { viewer } = useCesium()
   const drones = useStore((s) => s.drones)
@@ -83,6 +111,18 @@ export function DroneLayer() {
           () => dronePosRef.current.get(droneId) ?? markerCart,
           false, // not constant — re-evaluate every frame
         )
+        // Live HUD text: the simulation's SJR judgement updates every frame
+        // and is read straight off the label. Operator never has to trust
+        // any volume rendering — the drone tells the truth in dB right where
+        // they're already looking.
+        const labelTextProperty = new CallbackProperty(
+          () => formatDroneLabel(drone.label, useStore.getState().droneRuntime[droneId]),
+          false,
+        )
+        const labelFillProperty = new CallbackProperty(
+          () => labelFillFor(useStore.getState().droneRuntime[droneId]),
+          false,
+        )
         marker = new Entity({
           id: markerId,
           position: positionProperty,
@@ -96,22 +136,24 @@ export function DroneLayer() {
             outlineWidth: isSelected ? 3 : 1,
           },
           label: {
-            text: drone.label,
+            text: labelTextProperty,
             font: '13px -apple-system, sans-serif',
-            fillColor: Color.WHITE,
+            fillColor: labelFillProperty,
             outlineColor: Color.BLACK,
             outlineWidth: 2,
             style: LabelStyle.FILL_AND_OUTLINE,
             horizontalOrigin: HorizontalOrigin.CENTER,
             verticalOrigin: VerticalOrigin.BOTTOM,
             pixelOffset: new Cartesian3(0, -10, 0),
-            showBackground: isSelected || isPlanning,
+            showBackground: true,
           },
         })
         viewer.entities.add(marker)
       } else if (marker.cylinder) {
-        // Position auto-updates via the CallbackProperty + ref. Only material
-        // and selection styling need a per-render write.
+        // Position + label auto-update via CallbackProperty. Only the
+        // cylinder material needs a per-render write (it tracks the same
+        // status info via colorForStatus, but Cesium doesn't accept a
+        // CallbackProperty for cylinder.material in older versions).
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(marker.cylinder as any).material = markerColor
       }
