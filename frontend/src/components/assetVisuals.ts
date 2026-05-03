@@ -39,7 +39,7 @@ const MODEL_URI: Record<AssetType, string> = {
 // for the asset class. Tweakable as the operator finds them too big/small.
 const MODEL_SCALE: Record<AssetType, number> = {
   jammer: 2.5,
-  sensor: 0.25,
+  sensor: 0.1,
   relay: 1.0,
   // ^ relay tower is naturally tall in its source mesh; jammer is mid-sized;
   //   sensor mesh is large at unit scale so we shrink it down to a man-portable
