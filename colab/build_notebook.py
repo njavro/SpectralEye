@@ -49,9 +49,9 @@ Then run all cells in order. The install cell takes ~3-4 minutes the first
 time; subsequent runs reuse the cached environment for the session.
 """
 
-INSTALL_CODE = '''# Install Sionna RT, Mitsuba 3 (its renderer), OSM client, FastAPI server,
+INSTALL_CODE = '''# Install Sionna RT, Mitsuba 3 (its renderer), OSM HTTP client, FastAPI server,
 # triangulation lib, and cloudflared for the public tunnel.
-!pip install -q sionna mitsuba shapely overpy mapbox-earcut fastapi "uvicorn[standard]" nest-asyncio pydantic
+!pip install -q sionna mitsuba shapely requests mapbox-earcut fastapi "uvicorn[standard]" nest-asyncio pydantic
 
 # cloudflared binary for the tunnel (no signup required, free).
 !wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /content/cloudflared
@@ -80,16 +80,18 @@ If it errors with a CUDA-related message, re-check the GPU runtime
 selection in Step 1.
 """
 
-IMPORTS_CODE = '''import base64
+IMPORTS_CODE = '''import asyncio
+import base64
 import math
 import os
 import threading
 import time
+import traceback
 from datetime import datetime, timezone
 from typing import Literal
 
 import numpy as np
-import overpy
+import requests
 import mapbox_earcut as earcut
 import sionna
 import sionna.rt as rt
@@ -132,7 +134,10 @@ Coordinates are local Cartesian (meters from AOI center) so Sionna can ray
 trace in a flat reference frame.
 """
 
-SCENE_CODE = '''def _to_local_frame(center_lon, center_lat):
+SCENE_CODE = '''OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+
+def _to_local_frame(center_lon, center_lat):
     deg_per_m_lat = 1.0 / 111_320.0
     deg_per_m_lon = 1.0 / (111_320.0 * math.cos(math.radians(center_lat)))
     def to_local(lon, lat):
@@ -182,8 +187,7 @@ def build_scene(bbox):
     center_lon = (west + east) / 2
     to_local = _to_local_frame(center_lon, center_lat)
 
-    # Buildings via Overpass.
-    api = overpy.Overpass()
+    # Buildings via Overpass — direct HTTP (overpy returned 406 from Colab IPs).
     query = f"""
     [out:json][timeout:30];
     (
@@ -193,16 +197,28 @@ def build_scene(bbox):
     out geom;
     """
     print(f"Querying OSM for buildings in {bbox}...")
-    result = api.query(query)
-    print(f"OSM returned {len(result.ways)} ways, {len(result.relations)} relations")
+    r = requests.post(
+        OVERPASS_URL,
+        data={"data": query},
+        headers={"User-Agent": "SpectralEye/0.1 (EW C2 demo)", "Accept": "application/json"},
+        timeout=60,
+    )
+    if r.status_code != 200:
+        raise RuntimeError(f"Overpass {r.status_code}: {r.text[:300]}")
+    elements = r.json().get("elements", [])
+    print(f"OSM returned {len(elements)} elements")
 
     vertices = []
     faces = []
-    for way in result.ways:
-        if "building" not in way.tags:
+    for elem in elements:
+        if elem.get("type") != "way":
             continue
-        height = _building_height(way.tags)
-        coords = [to_local(float(n.lon), float(n.lat)) for n in way.nodes]
+        tags = elem.get("tags", {})
+        if "building" not in tags:
+            continue
+        height = _building_height(tags)
+        geom = elem.get("geometry") or []
+        coords = [to_local(g["lon"], g["lat"]) for g in geom]
         if len(coords) < 4:
             continue
         if coords[0] == coords[-1]:
@@ -370,7 +386,36 @@ def compute_coverage_grid(asset, grid_spec, scene_path, scene_center):
 print("Sionna runner ready.")
 '''
 
-API_MD = """## Step 5 — FastAPI server
+SELFTEST_MD = """## Step 5 — Self-test the pipeline
+
+Runs build_scene + compute_coverage_grid against a small test asset over an
+SF bbox. If this cell errors, the FastAPI server in the next cell will too;
+fix the error here first so the traceback is visible directly in this cell
+output (not buried inside a 500 from the FastAPI handler).
+"""
+
+SELFTEST_CODE = '''_test_asset = {
+    "type": "jammer", "longitude": -122.4194, "latitude": 37.7749,
+    "height": 50.0, "frequency_mhz": 2400.0, "erp_dbm": 50.0,
+}
+_test_grid_spec = {
+    "bbox": {"west": -122.435, "south": 37.770, "east": -122.405, "north": 37.785},
+    "voxel_size_m": 25.0, "height_min_m": 0.0, "height_max_m": 200.0,
+}
+
+try:
+    _scene_path, _scene_center = build_scene(_test_grid_spec["bbox"])
+    print(f"OK scene built: {_scene_path}, center {_scene_center}")
+    _flat, _nx, _ny, _nz = compute_coverage_grid(
+        _test_asset, _test_grid_spec, _scene_path, _scene_center
+    )
+    print(f"OK coverage grid {_nx}x{_ny}x{_nz}, {len(_flat)} voxels")
+    print(f"   path-loss range: {_flat.min():.1f} to {_flat.max():.1f} dBm")
+except Exception:
+    traceback.print_exc()
+'''
+
+API_MD = """## Step 6 — FastAPI server
 
 The same `/coverage/sionna` route the local backend exposes. Local backend's
 `RemoteSionnaSource` POSTs requests here.
@@ -427,29 +472,35 @@ def coverage(req: _CoverageRequest):
     grid_spec = req.grid_spec.model_dump()
     grid_spec["bbox"] = bbox
 
-    t0 = time.time()
-    scene_path, scene_center = build_scene(bbox)
-    print(f"Scene built in {time.time() - t0:.1f}s")
+    try:
+        t0 = time.time()
+        scene_path, scene_center = build_scene(bbox)
+        print(f"Scene built in {time.time() - t0:.1f}s")
 
-    t1 = time.time()
-    flat, nx, ny, nz = compute_coverage_grid(asset, grid_spec, scene_path, scene_center)
-    print(f"Sionna coverage computed in {time.time() - t1:.1f}s ({nx}x{ny}x{nz})")
+        t1 = time.time()
+        flat, nx, ny, nz = compute_coverage_grid(asset, grid_spec, scene_path, scene_center)
+        print(f"Sionna coverage computed in {time.time() - t1:.1f}s ({nx}x{ny}x{nz})")
 
-    encoded = base64.b64encode(flat.tobytes()).decode("ascii")
-    return {
-        "values_b64": encoded,
-        "nx": nx, "ny": ny, "nz": nz,
-        "bbox": bbox,
-        "height_min_m": grid_spec["height_min_m"],
-        "height_max_m": grid_spec["height_min_m"] + nz * grid_spec["voxel_size_m"],
-        "voxel_size_m": grid_spec["voxel_size_m"],
-        "units": "dBm",
-        "source": "sionna_remote",
-        "computed_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-import asyncio
+        encoded = base64.b64encode(flat.tobytes()).decode("ascii")
+        return {
+            "values_b64": encoded,
+            "nx": nx, "ny": ny, "nz": nz,
+            "bbox": bbox,
+            "height_min_m": grid_spec["height_min_m"],
+            "height_max_m": grid_spec["height_min_m"] + nz * grid_spec["voxel_size_m"],
+            "voxel_size_m": grid_spec["voxel_size_m"],
+            "units": "dBm",
+            "source": "sionna_remote",
+            "computed_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception:
+        # Surface the traceback in the response body so the local backend's
+        # error log shows the actual cause (otherwise FastAPI hides it as
+        # "Internal Server Error" and we have to scrape the cell stdout).
+        tb = traceback.format_exc()
+        print(tb)
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=tb[-1500:])
 
 
 def _run_server():
@@ -468,7 +519,7 @@ time.sleep(2)
 print("FastAPI server running on port 8765 inside notebook.")
 '''
 
-TUNNEL_MD = """## Step 6 — Public URL via cloudflared tunnel
+TUNNEL_MD = """## Step 7 — Public URL via cloudflared tunnel
 
 Cloudflare's `cloudflared` exposes the notebook's port 8765 to the internet
 on a temporary public HTTPS URL. No signup or auth required.
@@ -519,7 +570,7 @@ else:
     print("Check the output above for errors.")
 '''
 
-USAGE_MD = """## Step 7 — Verifying the connection
+USAGE_MD = """## Step 8 — Verifying the connection
 
 After pasting the URL into `backend/.env` and restarting the local backend:
 
@@ -583,6 +634,8 @@ def build() -> dict:
             code_cell(SCENE_CODE),
             md_cell(RUNNER_MD),
             code_cell(RUNNER_CODE),
+            md_cell(SELFTEST_MD),
+            code_cell(SELFTEST_CODE),
             md_cell(API_MD),
             code_cell(API_CODE),
             md_cell(TUNNEL_MD),
