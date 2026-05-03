@@ -65,6 +65,19 @@ export function SimulationRunner() {
         const { position, finished } = computeDronePosition(drone, nextTime)
         const jamming = evaluateJamming(drone, position, s.assets, s.coverageGrids, offset)
         const intruded = detectIntrusion(position, s.ois)
+        // One-shot transition log when intrusion state changes — easier to
+        // diagnose "drone visually inside dome but no alert" than to scrape
+        // 60 fps of state. Drops once we're confident the geometry agrees
+        // with what the operator sees.
+        if ((intruded?.id ?? null) !== rt.intrudedOoi) {
+          if (intruded) {
+            console.log(
+              `[Sim] ${drone.label} ENTER ${intruded.label} — drone(${position.longitude.toFixed(6)},${position.latitude.toFixed(6)},${position.height.toFixed(1)}) ooi(${intruded.longitude.toFixed(6)},${intruded.latitude.toFixed(6)},${intruded.height.toFixed(1)}) r=${intruded.perimeterRadiusM}`,
+            )
+          } else if (rt.intrudedOoi) {
+            console.log(`[Sim] ${drone.label} EXIT ${rt.intrudedOoi}`)
+          }
+        }
 
         if (jamming.jammed && jamming.strongestJammerId) {
           nextRuntime[drone.id] = {
