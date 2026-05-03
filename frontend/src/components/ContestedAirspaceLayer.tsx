@@ -19,34 +19,29 @@ import {
 import isosurface from 'isosurface'
 import type { CoverageGrid } from '../api'
 import { useStore } from '../store'
-import {
-  JAMMER_CONTESTED_THRESHOLD_DBM,
-  JAMMER_DOMINANCE_THRESHOLD_DBM,
-} from '../types'
+import { JAMMER_CONTESTED_THRESHOLD_DBM } from '../types'
 
 // Renders the "drone-jamming" volume for every cached jammer coverage grid as
-// two nested isosurface shells:
+// a SINGLE solid magenta isosurface at JAMMER_CONTESTED_THRESHOLD_DBM — the
+// exact threshold the simulation uses to flag a default-tuned drone as
+// jammed. Inside the volume → drone gets jammed. Outside → drone flies
+// clear. The visual IS the simulation's truth; no interpretation needed.
 //
-//   outer @ JAMMER_CONTESTED_THRESHOLD_DBM  — the actual jamming boundary;
-//     a default-tuned drone outside this shell stays clear of the link
-//     loss. Drawn at low alpha so it doesn't dominate the scene.
-//   inner @ JAMMER_DOMINANCE_THRESHOLD_DBM  — the "no-escape" core where
-//     the jammer dominates with margin. Higher alpha to visually anchor
-//     the jammer's true line-of-sight effective zone.
+// Earlier versions rendered nested shells (outer "potential jam" + inner
+// "definite jam") which were prettier but operationally confusing — the
+// dense inner shell grabbed the eye and read as "the purple area," making
+// drones in the faint outer halo look like they were outside the contested
+// zone when they were actually inside the jamming boundary.
 //
 // Re-runs whenever a jammer is added/removed, its coverage grid arrives, or
 // the user toggles `contestedAirspaceVisible` in the Situation Modeling panel.
 // Builds a per-jammer Primitive that's flipped via .show on toggle so we don't
 // re-marching-cubes when hiding/showing.
-//
-// Color: magenta (#d946ef), shell-specific alpha — distinct from jammer red,
-// sensor blue, relay yellow, OoI green.
 
-// (R, G, B, A) for the outer ("drone gets jammed here") and inner ("jammer
-// dominates by ≥ 20 dB") shells. Outer must stay light enough that the inner
-// shows through it.
-const CONTESTED_OUTER_RGBA: [number, number, number, number] = [217, 70, 239, 35]
-const CONTESTED_INNER_RGBA: [number, number, number, number] = [217, 70, 239, 110]
+// (R, G, B, A) for the contested volume. Alpha picked to be unmistakably
+// visible without obscuring map context — strong enough to read the boundary
+// at a glance from any camera angle.
+const CONTESTED_RGBA: [number, number, number, number] = [217, 70, 239, 90]
 
 type Entry = {
   // Hash that decides whether the cached primitive is still valid.
@@ -235,28 +230,16 @@ function buildShellInstance(
 }
 
 function buildContestedPrimitive(grid: CoverageGrid, groundOffsetM: number): Primitive | null {
-  // Build outer first (matching simulation jamming boundary), then inner
-  // (dominance core). Either may be null if the field never crosses the
-  // threshold inside the grid; primitive is null only if BOTH are missing.
-  const instances: GeometryInstance[] = []
-  const outer = buildShellInstance(
+  const instance = buildShellInstance(
     grid,
     groundOffsetM,
     JAMMER_CONTESTED_THRESHOLD_DBM,
-    CONTESTED_OUTER_RGBA,
+    CONTESTED_RGBA,
   )
-  if (outer) instances.push(outer)
-  const inner = buildShellInstance(
-    grid,
-    groundOffsetM,
-    JAMMER_DOMINANCE_THRESHOLD_DBM,
-    CONTESTED_INNER_RGBA,
-  )
-  if (inner) instances.push(inner)
-  if (instances.length === 0) return null
+  if (!instance) return null
 
   return new Primitive({
-    geometryInstances: instances,
+    geometryInstances: [instance],
     appearance: new PerInstanceColorAppearance({
       flat: false,
       translucent: true,

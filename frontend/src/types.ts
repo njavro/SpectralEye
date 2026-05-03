@@ -119,24 +119,14 @@ export const FREQUENCY_MATCH_TOLERANCE_MHZ = 80
 export const RELAY_SJR_MARGIN_DB = 10
 export const SENSOR_SNR_MARGIN_DB = 6
 
-// Contested-airspace boundaries — DERIVED from the simulation's jamming
+// Contested-airspace boundary — DERIVED from the simulation's jamming
 // constants so the rendered volume can never drift out of sync with what
-// drones actually experience. Two nested shells give the operator a gradient
-// view without losing the operational ground-truth boundary:
-//
-//   outer = JAMMER_CONTESTED_THRESHOLD_DBM (-65 dBm at defaults)
-//     Where a default-tuned drone gets jammed — DRONE_LINK_REFERENCE_DBM
-//     minus the default SJR margin. A drone OUTSIDE the outer shell will
-//     not be jammed by this jammer; INSIDE, it will. This is the matching
-//     boundary, not a stylistic choice.
-//
-//   inner = JAMMER_DOMINANCE_THRESHOLD_DBM (-45 dBm at defaults)
-//     Where the jammer dominates by an additional 20 dB beyond the
-//     jamming threshold — the "no escape, no spectral nulls, no hopping
-//     buys you out of this" core. Visually emphasised with higher alpha.
+// drones actually experience. The visual is a SINGLE solid shell at this
+// threshold (matching the simulation's default jamming boundary), so the
+// operator can read the map literally: inside the volume → drone gets
+// jammed, outside → drone flies clear. No nested shells; no interpretation.
 export const JAMMER_CONTESTED_THRESHOLD_DBM =
   DRONE_LINK_REFERENCE_DBM - DEFAULT_SJR_THRESHOLD_DB
-export const JAMMER_DOMINANCE_THRESHOLD_DBM = JAMMER_CONTESTED_THRESHOLD_DBM + 20
 
 export type DroneStatus = 'flying' | 'finished' | 'jammed' | 'intrusion'
 
