@@ -71,6 +71,9 @@ export function SimulationRunner() {
         // with a single fly-through). Cleared by "Situation mitigated" or
         // by Reset.
         if (intruded && intruded.id !== rt.intrudedOoi) {
+          console.log(
+            `[Sim] ${drone.label} ENTER ${intruded.label} → recordIntrusionEvent`,
+          )
           s.recordIntrusionEvent({
             droneId: drone.id,
             droneLabel: drone.label,
@@ -79,6 +82,9 @@ export function SimulationRunner() {
             detectedAt: nextTime,
             frequencyMhz: drone.frequencyMhz,
           })
+          console.log(
+            `[Sim] events now: ${useStore.getState().unacknowledgedIntrusions.length}`,
+          )
         }
 
         if (jamming.jammed && jamming.strongestJammerId) {
