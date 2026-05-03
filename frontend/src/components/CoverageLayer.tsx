@@ -101,6 +101,11 @@ export function CoverageLayer() {
   // what triggers the per-non-jammer "rebuild from cached grid, no refetch"
   // path below (jammer state → renderKey changes → primitive rebuilds).
   const coverageGrids = useStore((s) => s.coverageGrids)
+  // Toggling contested airspace on implicitly needs every jammer's grid —
+  // ContestedAirspaceLayer can't render a jammer it has no grid for, which
+  // is why "I see contested for one jammer but not the others" happens.
+  // Treat contested-on as an implicit fetch trigger for all jammers.
+  const contestedAirspaceVisible = useStore((s) => s.contestedAirspaceVisible)
   const cacheRef = useRef<Map<string, Entry>>(new Map())
 
   useEffect(() => {
@@ -148,8 +153,12 @@ export function CoverageLayer() {
     // queue a fresh fetch.
     const pending: Array<{ asset: Asset; entry: Entry }> = []
     for (const asset of assets) {
-      if (!visibleIds.has(asset.id)) continue
-      if (typesVisible[asset.type] === false) continue
+      // An asset's grid is needed if (a) its EMS volume is visible, or
+      // (b) contested-airspace is on AND it's a jammer. The contested layer
+      // can't render anything for jammers without cached grids.
+      const emsVisible = visibleIds.has(asset.id) && typesVisible[asset.type] !== false
+      const neededForContested = contestedAirspaceVisible && asset.type === 'jammer'
+      if (!emsVisible && !neededForContested) continue
       const pKey = paramsKeyFor(asset)
       const rKey = renderKeyFor(asset, assets, coverageGrids)
       const existing = cache.get(asset.id)
@@ -273,7 +282,7 @@ export function CoverageLayer() {
     return () => {
       cancelled = true
     }
-  }, [viewer, assets, aoi, visibleIds, typesVisible, coverageGrids])
+  }, [viewer, assets, aoi, visibleIds, typesVisible, coverageGrids, contestedAirspaceVisible])
 
   // Cleanup on unmount: cancel pending requests + drop primitives.
   useEffect(() => {
