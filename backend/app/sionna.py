@@ -196,15 +196,19 @@ class RemoteSionnaSource:
                     json=req.model_dump(mode="json"),
                 )
         except httpx.HTTPError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Remote Sionna server unreachable at {self.base_url}: {exc}",
-            ) from exc
+            msg = f"Remote Sionna server unreachable at {self.base_url}: {exc}"
+            print(f"[Sionna] FAIL {req.asset.type} f={req.asset.frequency_mhz} → {msg}", flush=True)
+            raise HTTPException(status_code=502, detail=msg) from exc
         if r.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Remote Sionna server returned {r.status_code}: {r.text[:4000]}",
+            msg = f"Remote Sionna server returned {r.status_code}: {r.text[:4000]}"
+            # Echo the remote's traceback into our own log so a full picture
+            # of what failed is captured server-side, not just in the browser.
+            print(
+                f"[Sionna] FAIL {req.asset.type} f={req.asset.frequency_mhz} "
+                f"erp={req.asset.erp_dbm} → {msg}",
+                flush=True,
             )
+            raise HTTPException(status_code=502, detail=msg)
         return CoverageGrid(**r.json())
 
 
