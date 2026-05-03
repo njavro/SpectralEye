@@ -35,7 +35,7 @@ import { JAMMER_CONTESTED_THRESHOLD_DBM } from '../types'
 // Builds a per-jammer Primitive that's flipped via .show on toggle so we
 // don't re-voxelize when hiding/showing.
 
-const CONTESTED_RGBA: [number, number, number, number] = [217, 70, 239, 110]
+const CONTESTED_RGBA: [number, number, number, number] = [217, 70, 239, 55]
 
 type Entry = {
   key: string
