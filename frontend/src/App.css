@@ -413,6 +413,37 @@ body,
   font-weight: 500;
 }
 
+.detail-status-pill {
+  font-size: 0.65rem;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.detail-status-pill.flying {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.detail-status-pill.finished {
+  color: #818cf8;
+  background: rgba(129, 140, 248, 0.14);
+}
+
+.detail-status-pill.jammed {
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.18);
+}
+
+.detail-status-pill.intrusion {
+  color: #ffffff;
+  background: #b91c1c;
+}
+
 .detail-close {
   background: transparent;
   border: none;

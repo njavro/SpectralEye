@@ -3,6 +3,7 @@ import './cesium-config'
 import { SceneViewer } from './components/SceneViewer'
 import { AssetPalette } from './components/AssetPalette'
 import { AssetDetailPanel } from './components/AssetDetailPanel'
+import { DroneDetailPanel } from './components/DroneDetailPanel'
 import { IntrusionAlertOverlay } from './components/IntrusionAlertOverlay'
 import { OoIDetailPanel } from './components/OoIDetailPanel'
 import { SituationModelingPanel } from './components/SituationModelingPanel'
@@ -257,6 +258,7 @@ function App() {
           <EmsLoadingOverlay />
         </main>
         <AssetDetailPanel />
+        <DroneDetailPanel />
         <OoIDetailPanel />
         <SituationModelingPanel />
       </div>
