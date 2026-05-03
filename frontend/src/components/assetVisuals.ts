@@ -134,3 +134,18 @@ export const COVERAGE_VOLUME_RGBA: Record<AssetType, string> = {
   sensor: 'rgba(63, 182, 246, 0.14)',
   relay: 'rgba(246, 210, 63, 0.14)',
 }
+
+// Per-asset RGB triplet (without alpha — alpha is set per nested contour).
+export const COVERAGE_VOLUME_RGB: Record<AssetType, [number, number, number]> = {
+  jammer: [231, 76, 60],
+  sensor: [63, 182, 246],
+  relay: [246, 210, 63],
+}
+
+// Nested contour thresholds, in dB above the base threshold for each asset.
+// Renders 3 shells per asset (fringe / strong / core) so the operator sees
+// concentric "strength bands" instead of a single hollow shell — like a
+// 3D version of topographic contours.
+export const COVERAGE_CONTOUR_OFFSETS_DB = [0, 15, 30] as const
+// Alpha per contour (matches order of CONTOUR_OFFSETS_DB).
+export const COVERAGE_CONTOUR_ALPHA = [0.10, 0.18, 0.28] as const

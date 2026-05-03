@@ -45,3 +45,47 @@ export function defaultAssetParams(type: AssetType): Pick<
       return { frequencyMhz: 5800, erpDbm: 30, antennaPattern: 'omni', status: 'deployed' }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Threats and defended objects (Phase 6)
+// ---------------------------------------------------------------------------
+
+export type Waypoint = {
+  longitude: number
+  latitude: number
+  height: number // m above WGS84 ellipsoid (absolute)
+}
+
+// A drone-class threat. Trajectory = start point + ordered waypoints. Speed
+// determines how long the drone takes to traverse each segment when "Run"
+// is pressed. Frequency + threshold are used by SJR jamming assessment.
+export type Drone = {
+  id: string
+  label: string
+  start: Waypoint
+  waypoints: Waypoint[]
+  speedMps: number
+  frequencyMhz: number
+  sjrThresholdDb: number
+}
+
+// A defended object whose immediate safety perimeter triggers an alert
+// when a drone enters it.
+export type ObjectOfInterest = {
+  id: string
+  label: string
+  longitude: number
+  latitude: number
+  height: number
+  perimeterRadiusM: number
+}
+
+export const DEFAULT_DRONE_SPEED_MPS = 15 // ~50 km/h, typical hobby quadcopter
+export const DEFAULT_DRONE_FREQ_MHZ = 2400
+export const DEFAULT_SJR_THRESHOLD_DB = 10
+// How far above the picked surface a drone waypoint sits. 30 m is a reasonable
+// drone-cruise altitude over a city for visual clarity (above most cars,
+// streetlamps, but below typical building rooftops).
+export const DEFAULT_DRONE_AGL_M = 30
+
+export const DEFAULT_OOI_PERIMETER_M = 100

@@ -48,6 +48,13 @@ body,
 .top-bar-right {
   display: flex;
   justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.change-location.active {
+  background: #1d2a3c;
+  border-color: #4a90e2;
+  color: #e8eaed;
 }
 
 .brand {
@@ -227,6 +234,39 @@ body,
   border-top-color: #fff;
   border-radius: 50%;
   animation: initSpin 0.8s linear infinite;
+}
+
+.palette-ems-types {
+  display: flex;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+}
+
+.palette-ems-type {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.4rem;
+  background: #15191f;
+  border: 1px solid #2a313b;
+  border-radius: 4px;
+  color: #aab1b9;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.palette-ems-type:hover {
+  background: #1c2128;
+  border-color: #3a4250;
+}
+
+.palette-ems-type.active {
+  color: #e8eaed;
+  border-color: #4a90e2;
+  background: #1d2a3c;
 }
 
 .palette-ems-button {
@@ -488,6 +528,118 @@ body,
 .detail-delete:hover {
   background: rgba(232, 115, 102, 0.08);
   border-color: #6f3037;
+}
+
+/* ---------- Situation modeling panel (right) ---------- */
+
+.situation-panel {
+  width: 320px;
+  flex-shrink: 0;
+  background: #11141a;
+  border-left: 1px solid #1f242c;
+  padding: 0.85rem 0.85rem 1rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.situation-header {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #1f242c;
+}
+
+.situation-title {
+  flex: 1;
+  font-size: 0.9rem;
+  color: #e8eaed;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.situation-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.situation-section-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6c7682;
+}
+
+.drone-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.drone-list-item {
+  display: flex;
+  background: #15191f;
+  border: 1px solid #2a313b;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.drone-list-item.selected {
+  border-color: #4a90e2;
+}
+
+.drone-list-button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.5rem 0.7rem;
+  background: transparent;
+  border: none;
+  color: #d6dae0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.drone-list-button:hover {
+  background: #1c2128;
+}
+
+.drone-list-label {
+  font-size: 0.85rem;
+  color: #e8eaed;
+  font-weight: 500;
+}
+
+.drone-list-meta {
+  font-size: 0.72rem;
+  color: #6c7682;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.drone-list-delete {
+  background: transparent;
+  border: none;
+  color: #6c7682;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 0.65rem;
+  border-left: 1px solid #2a313b;
+}
+
+.drone-list-delete:hover {
+  color: #e87366;
+  background: rgba(232, 115, 102, 0.08);
 }
 
 /* ---------- Initializing overlay ---------- */

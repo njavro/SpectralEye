@@ -18,6 +18,8 @@ export function AssetPalette() {
   const visibleCoverageCount = useStore((s) => s.visibleCoverageIds.size)
   const showAllCoverage = useStore((s) => s.showAllCoverage)
   const hideAllCoverage = useStore((s) => s.hideAllCoverage)
+  const coverageTypesVisible = useStore((s) => s.coverageTypesVisible)
+  const toggleCoverageType = useStore((s) => s.toggleCoverageType)
 
   const enabled = aoi !== null && !aoiInitializing
   const allVisible = assetCount > 0 && visibleCoverageCount === assetCount
@@ -86,10 +88,30 @@ export function AssetPalette() {
               )
             })}
           </div>
-          {placeMode && (
+          {placeMode && placeMode !== 'ooi' && placeMode !== 'drone-plan' && (
             <div className="palette-hint">
               Click on the scene to drop the {ASSET_TYPE_LABELS[placeMode].toLowerCase()}.
               Press <kbd>Esc</kbd> to cancel.
+            </div>
+          )}
+
+          <div className="palette-section-label palette-section-label-spaced">
+            Defended objects
+          </div>
+          <div className="palette-buttons">
+            <button
+              type="button"
+              className={`palette-button${placeMode === 'ooi' ? ' active' : ''}`}
+              onClick={() => setPlaceMode(placeMode === 'ooi' ? null : 'ooi')}
+            >
+              <span className="palette-swatch" style={{ background: '#22c55e' }} />
+              <span className="palette-label">Place Strategic Point of Interest</span>
+            </button>
+          </div>
+          {placeMode === 'ooi' && (
+            <div className="palette-hint">
+              Click on the scene to place a Strategic Point of Interest. Adjust its safety
+              perimeter in the detail panel. Press <kbd>Esc</kbd> to exit.
             </div>
           )}
 
@@ -112,6 +134,26 @@ export function AssetPalette() {
               </button>
               <div className="palette-report-note">
                 Toggle the predicted RF coverage volumes for all deployed assets.
+              </div>
+              <div className="palette-ems-types">
+                {TYPES.map((t) => {
+                  const on = coverageTypesVisible[t]
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`palette-ems-type${on ? ' active' : ''}`}
+                      onClick={() => toggleCoverageType(t)}
+                      title={`${on ? 'Hide' : 'Show'} ${ASSET_TYPE_LABELS[t]} EMS overlay`}
+                    >
+                      <span
+                        className="palette-swatch"
+                        style={{ background: ASSET_TYPE_COLOR[t], opacity: on ? 1 : 0.3 }}
+                      />
+                      <span className="palette-label">{ASSET_TYPE_LABELS[t]}</span>
+                    </button>
+                  )
+                })}
               </div>
             </>
           )}

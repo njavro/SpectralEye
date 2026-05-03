@@ -20,6 +20,9 @@ import { AssetLayer } from './AssetLayer'
 import { AssetInteraction } from './AssetInteraction'
 import { CoverageLayer } from './CoverageLayer'
 import { DeploymentImporter } from './DeploymentImporter'
+import { DroneLayer } from './DroneLayer'
+import { OoILayer } from './OoILayer'
+import { ThreatInteraction } from './ThreatInteraction'
 
 type Props = {
   aoi: AreaOfOperation | null
@@ -289,8 +292,11 @@ function SceneSetup({ aoi, drawMode, onBboxDrawn, onCancelDraw, onAoiBuildingsRe
     <>
       <BboxPicker enabled={drawMode} onDrawn={onBboxDrawn} onCancel={onCancelDraw} />
       <CoverageLayer />
+      <OoILayer />
+      <DroneLayer />
       <AssetLayer />
       <AssetInteraction />
+      <ThreatInteraction />
       <DeploymentImporter />
     </>
   )

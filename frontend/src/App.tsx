@@ -3,6 +3,8 @@ import './cesium-config'
 import { SceneViewer } from './components/SceneViewer'
 import { AssetPalette } from './components/AssetPalette'
 import { AssetDetailPanel } from './components/AssetDetailPanel'
+import { OoIDetailPanel } from './components/OoIDetailPanel'
+import { SituationModelingPanel } from './components/SituationModelingPanel'
 import { fetchWaterPolygons, reverseGeocode } from './api'
 import { useStore } from './store'
 import { isInWater } from './components/placementRules'
@@ -180,6 +182,8 @@ function App() {
 
   const dim = aoi ? bboxDimensionsKm(aoi.bbox) : null
   const center = aoi ? bboxCenter(aoi.bbox) : null
+  const situationModelingOpen = useStore((s) => s.situationModelingOpen)
+  const toggleSituationModeling = useStore((s) => s.toggleSituationModeling)
 
   return (
     <div className={`app-shell${drawMode ? ' draw-mode' : ''}`}>
@@ -213,6 +217,15 @@ function App() {
           )}
         </div>
         <div className="top-bar-right">
+          {aoi && (
+            <button
+              type="button"
+              className={`change-location${situationModelingOpen ? ' active' : ''}`}
+              onClick={toggleSituationModeling}
+            >
+              Situation Modeling
+            </button>
+          )}
           {aoi ? (
             <button type="button" className="change-location" onClick={resetAoi}>
               Reset area
@@ -240,8 +253,30 @@ function App() {
             onAoiBuildingsReady={handleAoiBuildingsReady}
           />
           {aoiInitializing && <InitializingOverlay />}
+          <EmsLoadingOverlay />
         </main>
         <AssetDetailPanel />
+        <OoIDetailPanel />
+        <SituationModelingPanel />
+      </div>
+    </div>
+  )
+}
+
+function EmsLoadingOverlay() {
+  const pending = useStore((s) => s.pendingCoverageFetches)
+  if (pending <= 0) return null
+  return (
+    <div className="initializing-overlay">
+      <div className="initializing-card">
+        <div className="initializing-spinner" />
+        <div className="initializing-text">
+          <div className="initializing-title">Generating Electromagnetic Environment</div>
+          <div className="initializing-subtitle">
+            Ray-tracing RF propagation for {pending} asset
+            {pending === 1 ? '' : 's'}…
+          </div>
+        </div>
       </div>
     </div>
   )
