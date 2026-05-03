@@ -22,11 +22,13 @@ import { useStore } from '../store'
 import type { Asset } from '../types'
 import { COVERAGE_THRESHOLD_DBM, COVERAGE_VOLUME_RGBA } from './assetVisuals'
 
-// Default voxel grid spec: 25 m horizontal, 0–500 m vertical. Matches what
-// the user OK'd on Phase 4 kickoff.
+// Default voxel grid spec: 25 m horizontal, 0–100 m vertical. Tight vertical
+// range covers most drone-altitude scenarios and keeps per-request Sionna
+// time bounded (4 Z slices ≈ 12-15 s, fits inside cloudflared's free-tier
+// request timeout with margin even when ERP edits trigger pile-up).
 const DEFAULT_VOXEL_SIZE_M = 25
 const DEFAULT_HEIGHT_MIN_M = 0
-const DEFAULT_HEIGHT_MAX_M = 500
+const DEFAULT_HEIGHT_MAX_M = 100
 
 // A "coverage params" hash — only re-fetch when something material changes.
 function coverageKey(a: Asset): string {

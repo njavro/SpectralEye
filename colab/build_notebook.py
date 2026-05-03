@@ -243,10 +243,12 @@ def build_scene(bbox):
             continue
 
         # Triangulate the footprint polygon (top + bottom caps).
-        flat = np.array(coords, dtype=np.float64).flatten()
+        # mapbox_earcut needs a 2D (N, 2) array of vertices — flat 1D silently
+        # returns empty, which would skip every building.
+        verts_2d = np.array(coords, dtype=np.float64)
         rings = np.array([len(coords)], dtype=np.uint32)
         try:
-            tris_flat = earcut.triangulate_float64(flat, rings)
+            tris_flat = earcut.triangulate_float64(verts_2d, rings)
         except Exception:
             continue
         if tris_flat is None or len(tris_flat) == 0:
