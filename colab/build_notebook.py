@@ -64,22 +64,33 @@ INSTALL_CODE = '''# Install Sionna RT, Mitsuba 3 (its renderer), OSM HTTP client
 
 # Sionna's deps upgrade numpy/tensorflow in-place; the running kernel still
 # has the OLD modules cached, which produces "cannot import name _center
-# from numpy._core.umath" on the next cell. Force a kernel restart so all
-# cells from here on see the freshly installed versions.
-print("Install complete. Restarting runtime so the new numpy/tensorflow load cleanly...")
-print("After the kernel reconnects, run cells from the next one onwards.")
-import IPython
-IPython.Application.instance().kernel.do_shutdown(True)
+# from numpy._core.umath" on the next cell. The kernel MUST be restarted
+# before importing anything from sionna/numpy.
+#
+# Auto-restart (IPython.Application.instance().kernel.do_shutdown) races
+# with absl.logging atexit handlers and produces an infinite restart loop,
+# so we make it manual. Do exactly what the printed message says.
+print()
+print("=" * 70)
+print("  INSTALL COMPLETE — MANUAL RESTART REQUIRED")
+print()
+print("  Top menu:  Runtime  ->  Restart session")
+print()
+print("  After 'Connected' shows again, run cells from STEP 2 onwards.")
+print("  Do NOT re-run this install cell.")
+print("=" * 70)
 '''
 
 IMPORTS_MD = """## Step 2 — Imports and shared config
 
-The previous cell auto-restarts the runtime; once it reconnects, just run
-this cell — no need to re-run the install.
+**Before running this cell**, restart the runtime via menu:
+
+  **Runtime → Restart session**
+
+Then run this cell (and the next ones). Do not re-run the install cell.
 
 If this cell errors with `cannot import name '_center' from
-numpy._core.umath`, the kernel didn't actually restart. Use **Runtime →
-Restart session** manually and run this cell again.
+numpy._core.umath`, the kernel wasn't actually restarted. Restart again.
 
 If it errors with a CUDA-related message, re-check the GPU runtime
 selection in Step 1.
